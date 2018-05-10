@@ -10,9 +10,13 @@ import random
 from datetime import datetime
 from time import sleep
 import pytz
-import json, csv
+import os, json, csv
 import ccxt.async as ccxt
 from ccxt.async import Exchange
+from utils.tail import tail
+
+data_folder = "data"
+csv_separator = ","
 
 my_exchanges = [
     'binance',
@@ -51,7 +55,7 @@ async def OrderBook(exchange, product):
                 datetime.now(), exchange.name, product, 
                 orderbook['bids'][0], orderbook['asks'][0]))
         await asyncio.sleep(exchange.rateLimit/1000)
-    
+
 
 async def History(exchange, pair, last_fetch):
     while True:
@@ -65,10 +69,11 @@ async def History(exchange, pair, last_fetch):
             history = histories[-1]
             last_fetch[exchange.name.lower()][pair]['history'] = history['timestamp'] + 1
                         
-            filename = "csv/{}.{}.csv".format(exchange.name, pair.replace("/","-"))
+            filename = "{}\\history\\{}.{}.csv".format(data_folder, exchange.name, pair.replace("/","-"))
             with open(filename, "a") as file:
                 for x in histories:
-                    txt = "{};{};{};{};{};{};{};{};{}".format(datetime.now(),
+                    txt = "{1}{0}{2}{0}{3}{0}{4}{0}{5}{0}{6}{0}{7}{0}{8}{0}{9}".format(
+                            csv_separator, datetime.now(),
                             x['timestamp'], x['datetime'], exchange.name, pair, 
                             x['price'], x['amount'], x['type'], x['side'])
                     file.write(txt + "\n")
@@ -115,7 +120,8 @@ async def main():
     print("Detecting active symbols and generating pairs...")
     ex_pairs = {}
     for ex in my_exchanges:
-        my_pairs = [sym.split('/') for sym in exchanges[ex].symbols if sym.split('/')[0] in my_tokens and sym.split('/')[1] in my_tokens]
+        my_pairs = [sym.split('/') for sym in exchanges[ex].symbols 
+                    if sym.split('/')[0] in my_tokens and sym.split('/')[1] in my_tokens]
         my_pairs = [x[0]+'/'+x[1] for x in my_pairs]
         ex_pairs[ex] = my_pairs
         #symbols = symbols + [x.replac e('USDT','USD') for x in exchanges[ex].symbols]
@@ -124,14 +130,32 @@ async def main():
     #my_pairs = [x[0]+'/'+x[1] for x in allowed_pairs]
     print("Done.\n")
 
+    print("Checking folder structure and loading last access time for each commodity...")
+    folders = ['history', 'orderbook']
+    for folder in folders:
+        os.makedirs(os.path.join(os.getcwd()) + "/" + data_folder + "/" + folder, exist_ok=True)
+
     last_fetch = {} # init dict with last fetches
-    for ex in my_exchanges:
-        last_fetch[ex] = { 'access': datetime.now() }
-        for pair in ex_pairs[ex]:
-            last_fetch[ex][pair] = {
-                                    'history': None, 
-                                    'orderbook': None,
-                                    } # pair
+    try:
+        for ex in my_exchanges:
+            last_fetch[ex] = { 'access': datetime.now() }
+            for pair in ex_pairs[ex]:
+
+                fileHistory = "{}/history/{}.{}.csv".format(data_folder, exchanges[ex].name, pair.replace("/","-"))
+                fileOrderbook = "{}/orderbook/{}.{}.csv".format(data_folder, exchanges[ex].name, pair.replace("/","-"))
+                accessHistory = int(tail(fileHistory, 1)[0].split(csv_separator)[1])+1 if os.path.isfile(fileHistory) == True else None
+                accessOrderbook = int(tail(fileOrderbook, 1)[0].split(csv_separator)[1])+1 if os.path.isfile(fileOrderbook) == True else None
+
+                last_fetch[ex][pair] = {
+                                        'history': None, #accessHistory+1,
+                                        'orderbook': None #accessOrderbook+1,
+                                        } # pair
+                last_fetch[ex][pair]['history'] = accessHistory
+                last_fetch[ex][pair]['orderbook'] = accessOrderbook
+                
+    except Exception:
+        pass
+    print("Done.\n")
 
     try:
         tasks = []
