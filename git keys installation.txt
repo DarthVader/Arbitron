@@ -1,0 +1,21 @@
+Windows:
+
+1. generate and add keys under Git Bash with the following commands:
+
+	ssh-keygen -t rsa -b 4096 -C "youraddress@yoursite.com"
+	eval "$(ssh-agent -s)"
+	ssh-add ~/.ssh/id_rsa
+
+2. open profile Settings on Github.com, click SSH and GPG keys, click "New SSH key"
+
+3. under Git Bash prompt execute the following command (this will copy generated key to clipboard):
+
+	for Windows:
+	clip < ~/.ssh/id_rsa.pub
+	
+	or for Mac
+	pbcopy < ~/.ssh/id_rsa.pub
+
+4. Paste clipboard contents to Github in "Key" field. Use your computer name for "Title" field
+
+5. If you're using Git extensions - import private key using upper menu: Tools -> Putty -> Generate or Import Key -> Load
