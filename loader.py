@@ -43,6 +43,9 @@ my_tokens = ['ADA','ZEC','ETC','EOS','DOGE','XDG','XRP','BTG','NEO','LTC','BCH',
              'USD','USDT'
              ]
 
+# allowed symbols to convert TO
+allowed_tsyms = ['USD', 'USDT', 'BTC', 'ETH', 'DOGE', 'LTC', 'EUR', 'RUB']
+
 
 async def OrderBook(exchange, pair, last_fetch):
     #process_time = random.randint(1,5)
@@ -118,6 +121,74 @@ async def History(exchange, pair, last_fetch):
             await asyncio.sleep(exchange.rateLimit/1000)
 
 
+def Init(exchanges_list):
+    """
+    Returns list of ccxt objects according exchanges list
+        exchanges - empty dict. 
+        exchanges_list - list of exchanges (lowercase)
+
+        example: 
+            exchange = {}
+            exchanges_list = ['binance', 'bittrex', 'poloniex' ...]
+    """
+
+    #print("Checking folder structure and loading last access time for each commodity...", end="", flush=True)
+    folders = ['history', 'orderbook']
+    for folder in folders:
+        os.makedirs(os.path.join(os.getcwd()) + "/" + data_folder + "/" + folder, exist_ok=True)
+    #print("Done.")
+
+    exchanges = {}
+    for id in exchanges_list:
+        exchange = getattr(ccxt, id)
+        exchange.enableRateLimit = True, # this option enables the built-in rate limiter <<=============
+        exchanges[id] = exchange()
+        
+    return exchanges
+
+
+def GetLastAccessTimes(exchanges, exchanges_list, tokens):
+    """
+    Returns dict of exchanges, corresponding pairs and last access time from cached files.
+    Parameters:
+        exchanges - dict of ccxt objects
+        exchanges_list - custom list of exchanges to filter (lowercase)
+        tokens - list of string values representing which token is allowed either on fsym or tsym
+    """
+    ex_pairs = {}
+    for ex in exchanges_list:
+        my_pairs = [sym.split('/') for sym in exchanges[ex].symbols 
+                    if sym.split('/')[0] in my_tokens and sym.split('/')[1] in my_tokens]
+        my_pairs = [x[0]+'/'+x[1] for x in my_pairs]
+        ex_pairs[ex] = my_pairs
+        #symbols = symbols + [x.replace('USDT','USD') for x in exchanges[ex].symbols]
+    #symbols = list(set(symbols))
+    #allowed_pairs = [sym.split('/') for sym in symbols if sym.split('/')[0] in my_tokens and sym.split('/')[1] in my_tokens]
+    #my_pairs = [x[0]+'/'+x[1] for x in allowed_pairs]
+
+    last_fetch = {} # init dict with last fetches
+    for ex in my_exchanges:
+        try:
+            last_fetch[ex] = { 'access': datetime.now() }
+            for pair in ex_pairs[ex]:
+
+                fileHistory = "{}/{}/history/{}.{}.csv".format(os.getcwd(), data_folder, exchanges[ex].name, pair.replace("/","-"))
+                fileOrderbook = "{}/{}/orderbook/{}.{}.csv".format(os.getcwd(), data_folder, exchanges[ex].name, pair.replace("/","-"))
+                accessHistory = int(tail(fileHistory, 1)[0].split(csv_separator)[1])+1 if os.path.isfile(fileHistory) == True else None
+                accessOrderbook = int(tail(fileOrderbook, 1)[0].split(csv_separator)[1])+1 if os.path.isfile(fileOrderbook) == True else None
+
+                last_fetch[ex][pair] = {
+                                        'history': None, #accessHistory+1,
+                                        'orderbook': None #accessOrderbook+1,
+                                        } # pair
+                last_fetch[ex][pair]['history'] = accessHistory
+                last_fetch[ex][pair]['orderbook'] = accessOrderbook        
+        except Exception:
+            pass
+
+    return last_fetch, ex_pairs
+
+
 async def LoadMarkets(exchange):
     await exchange.load_markets()
     print("{} market metadata loaded".format(exchange.name))
@@ -127,67 +198,31 @@ async def main():
 
     # create exchanges objects
     print("Initialize exchange objects...", end="", flush=True)
-    exchanges = {}
-    for id in my_exchanges:
-        exchange = getattr(ccxt, id)
-        exchange.enableRateLimit = True, # this option enables the built-in rate limiter <<=============
-        exchanges[id] = exchange()
+    exchanges = Init(my_exchanges)
     print("Done.")
 
-    print("Checking folder structure and loading last access time for each commodity...", end="", flush=True)
-    folders = ['history', 'orderbook']
-    for folder in folders:
-        os.makedirs(os.path.join(os.getcwd()) + "/" + data_folder + "/" + folder, exist_ok=True)
-    print("Done.")
+    # filename = "{}/{}/history/Bittrex.ADA-BTC.csv".format(os.getcwd(), data_folder)
+    # fi = open(filename, 'rb')
+    # data = fi.read()
+    # fi.close()
+    # fo = open(filename, 'wb')
+    # fo.write(data.replace('\x00', ''))
+    # fo.close()
 
-    print("Loading exchanges...")
-    
+    print("Loading exchanges...")    
     tasks = []
     for ex in exchanges.items():
         tasks.append(asyncio.ensure_future(LoadMarkets(ex[1])))
     await asyncio.gather(*tasks)
 
     # saving to exchange cache
-    #with open("{}/{}/exchanges.dat".format(os.getcwd(), data_folder), "wb") as handle:
-    #    pickle.dump(exchanges, handle, protocol=pickle.HIGHEST_PROTOCOL)
-    #print("Done.")
-
-    print("Detecting active symbols and generating pairs...", end="", flush=True)
-    ex_pairs = {}
-    for ex in my_exchanges:
-        my_pairs = [sym.split('/') for sym in exchanges[ex].symbols 
-                    if sym.split('/')[0] in my_tokens and sym.split('/')[1] in my_tokens]
-        my_pairs = [x[0]+'/'+x[1] for x in my_pairs]
-        ex_pairs[ex] = my_pairs
-        #symbols = symbols + [x.replac e('USDT','USD') for x in exchanges[ex].symbols]
-    #symbols = list(set(symbols))
-    #allowed_pairs = [sym.split('/') for sym in symbols if sym.split('/')[0] in my_tokens and sym.split('/')[1] in my_tokens]
-    #my_pairs = [x[0]+'/'+x[1] for x in allowed_pairs]
-    print("Done.")
+    # with open("{}/{}/exchanges.dat".format(os.getcwd(), data_folder), "wb") as handle:
+    #     pickle.dump(exchanges, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    # print("Done.")
 
     print("Fetching last access time for each pair...", end="", flush=True)
-    last_fetch = {} # init dict with last fetches
-    try:
-        for ex in my_exchanges:
-            last_fetch[ex] = { 'access': datetime.now() }
-            for pair in ex_pairs[ex]:
-
-                fileHistory = "{}/history/{}.{}.csv".format(data_folder, exchanges[ex].name, pair.replace("/","-"))
-                fileOrderbook = "{}/orderbook/{}.{}.csv".format(data_folder, exchanges[ex].name, pair.replace("/","-"))
-                accessHistory = int(tail(fileHistory, 1)[0].split(csv_separator)[1])+1 if os.path.isfile(fileHistory) == True else None
-                accessOrderbook = int(tail(fileOrderbook, 1)[0].split(csv_separator)[1])+1 if os.path.isfile(fileOrderbook) == True else None
-
-                last_fetch[ex][pair] = {
-                                        'history': None, #accessHistory+1,
-                                        'orderbook': None #accessOrderbook+1,
-                                        } # pair
-                last_fetch[ex][pair]['history'] = accessHistory
-                last_fetch[ex][pair]['orderbook'] = accessOrderbook
-                
-    except Exception:
-        pass
+    last_fetch, ex_pairs = GetLastAccessTimes(exchanges, my_exchanges, my_tokens) # init dict with last fetches
     print("Done.")
-
 
     try:
         tasks = []
