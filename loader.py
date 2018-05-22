@@ -9,13 +9,15 @@ import random
 #import argparse
 from datetime import datetime
 from time import sleep
-import pytz
+import pytz, glob
 import os, json, csv, pickle
 import ccxt.async as ccxt
 from ccxt.async import Exchange
 from utils.tail import tail
 
 data_folder = "data"
+history_path = "{}/{}/history".format(os.getcwd(), data_folder)
+orders_path = "{}/{}/orderbook".format(os.getcwd(), data_folder)
 csv_separator = ","
 
 my_exchanges = [
@@ -55,7 +57,7 @@ async def OrderBook(exchange, pair, last_fetch):
             if ts == None:
                 orderbooks = await exchange.fetch_order_book(pair, limit=100)
             else:
-                orderbooks = await exchange.fetch_order_book(pair, since=ts)        
+                orderbooks = await exchange.fetch_order_book(pair, since=ts)
 
             orderbook = await exchange.fetch_order_book(pair)
             
@@ -119,6 +121,19 @@ async def History(exchange, pair, last_fetch):
             pass
         finally:
             await asyncio.sleep(exchange.rateLimit/1000)
+
+
+def FixNullBytes(file):
+    command = 'tr < {0} -d "\\000" > {0}.txt'.format(file)
+    _ = os.system(command)
+    size1 = os.stat("{}".format(file)).st_size
+    size2 = os.stat("{}.txt".format(file)).st_size
+    if size1 != size2:
+        print("  fixing {}".format(file))
+        os.system("rm {}".format(file))
+        os.system("mv {0}.txt {0}".format(file))
+    else:
+        os.system("rm {}.txt".format(file))
 
 
 def Init(exchanges_list):
@@ -197,17 +212,17 @@ async def LoadMarkets(exchange):
 async def main():
 
     # create exchanges objects
-    print("Initialize exchange objects...", end="", flush=True)
+    print("Initialize objects...", end="", flush=True)
     exchanges = Init(my_exchanges)
     print("Done.")
 
-    # filename = "{}/{}/history/Bittrex.ADA-BTC.csv".format(os.getcwd(), data_folder)
-    # fi = open(filename, 'rb')
-    # data = fi.read()
-    # fi.close()
-    # fo = open(filename, 'wb')
-    # fo.write(data.replace('\x00', ''))
-    # fo.close()
+    print("Checking files...", end="", flush=True)
+    files = glob.glob("{}/{}/history/*.csv".format(os.getcwd(), data_folder)) + \
+            glob.glob("{}/{}/orderbook/*.csv".format(os.getcwd(), data_folder))
+    tasks = []
+    for file in files:
+        FixNullBytes(file)
+    print("OK.")
 
     print("Loading exchanges...")    
     tasks = []
@@ -230,8 +245,8 @@ async def main():
         for ex in exchanges.items(): # running concurrent tasks to fetch data
             ex_obj, exchange = ex[1], ex[0]
             for pair in ex_pairs[exchange]:
-                #tasks.append(asyncio.ensure_future(OrderBook(ex_obj, pair, last_fetch)))
-                tasks.append(asyncio.ensure_future(History(ex_obj, pair, last_fetch)))
+                tasks.append(asyncio.ensure_future(OrderBook(ex_obj, pair, last_fetch)))
+                #tasks.append(asyncio.ensure_future(History(ex_obj, pair, last_fetch)))
     except Exception:
         pass
     finally:
