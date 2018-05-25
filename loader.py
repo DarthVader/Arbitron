@@ -8,6 +8,7 @@ import asyncio
 import random
 #import argparse
 from datetime import datetime
+import time
 from time import sleep
 import pytz, glob
 import os, json, csv, pickle
@@ -15,10 +16,13 @@ import ccxt.async as ccxt
 from ccxt.async import Exchange
 from utils.tail import tail
 
+
 data_folder = "data"
 history_path = "{}/{}/history".format(os.getcwd(), data_folder)
 orders_path = "{}/{}/orderbook".format(os.getcwd(), data_folder)
+
 csv_separator = ","
+csv_separator_orderbook = ";"
 
 my_exchanges = [
     'binance',
@@ -53,20 +57,24 @@ async def OrderBook(exchange, pair, last_fetch):
     #process_time = random.randint(1,5)
     while True:
         try:
-            ts = last_fetch[exchange.name.lower()][pair]['history']
-            if ts == None:
-                orderbooks = await exchange.fetch_order_book(pair, limit=100)
-            else:
-                orderbooks = await exchange.fetch_order_book(pair, since=ts)
+            #ts = last_fetch[exchange.name.lower()][pair]['orderbook']
+            #if ts == None:
+            orderbook = await exchange.fetch_order_book(pair, limit=100)
+            #else:
+            #    orderbooks = await exchange.fetch_order_book(pair, since=ts)
 
-            orderbook = await exchange.fetch_order_book(pair)
+            #orderbook = await exchange.fetch_order_book(pair)
             
-            #filename = "data/{}.{}.csv".format(exchange.name, pair.replace("/","-"))
+            filename = "{}/{}/orderbook/{}.{}.csv".format(os.getcwd(), data_folder, exchange.name, pair.replace("/","-"))
+            with open(filename, "a") as file:
+                line = "{1}{0}{2}{0}{3}{0}{4}{0}{5}{0}{6}".format(csv_separator_orderbook,datetime.utcnow(),
+                        orderbook['timestamp'], exchange.name, pair, orderbook['bids'], orderbook['asks'])
+                file.write(line + "\n")
+
             filename = "{}/{}/orderbook_log.csv".format(os.getcwd(), data_folder)
             with open(filename, "a") as file:
-                line = "{};{};{};{};{};{};{};{};{}".format(datetime.now(),
-                        orderbook['timestamp'], exchange.name, pair, 
-                        orderbook['price'], orderbook['amount'], orderbook['type'], orderbook['side'], ts)
+                line = "{1}{0}{2}{0}{3}{0}{4}".format(csv_separator_orderbook, datetime.now(),
+                        orderbook['timestamp'], exchange.name, pair)
                 file.write(line + "\n")
 
             #print("Fetch {} has completed after {} seconds".format(exchange_name, process_time))
@@ -98,7 +106,7 @@ async def History(exchange, pair, last_fetch):
             with open(filename, "a") as file:
                 for x in histories:
                     txt = "{1}{0}{2}{0}{3}{0}{4}{0}{5}{0}{6}{0}{7}{0}{8}{0}{9}".format(
-                            csv_separator, datetime.now(),
+                            csv_separator, datetime.utcnow(),
                             x['timestamp'], x['datetime'], exchange.name, pair, 
                             x['price'], x['amount'], x['type'], x['side'])
                     file.write(txt + "\n")
@@ -183,24 +191,47 @@ def GetLastAccessTimes(exchanges, exchanges_list, tokens):
 
     last_fetch = {} # init dict with last fetches
     for ex in my_exchanges:
-        try:
-            last_fetch[ex] = { 'access': datetime.now() }
-            for pair in ex_pairs[ex]:
+        
+        last_fetch[ex] = { 'access': datetime.utcnow() }
+        for pair in ex_pairs[ex]:
+            accessHistory = None
+            accessOrderbook = None
 
-                fileHistory = "{}/{}/history/{}.{}.csv".format(os.getcwd(), data_folder, exchanges[ex].name, pair.replace("/","-"))
-                fileOrderbook = "{}/{}/orderbook/{}.{}.csv".format(os.getcwd(), data_folder, exchanges[ex].name, pair.replace("/","-"))
-                accessHistory = int(tail(fileHistory, 1)[0].split(csv_separator)[1])+1 if os.path.isfile(fileHistory) == True else None
-                accessOrderbook = int(tail(fileOrderbook, 1)[0].split(csv_separator)[1])+1 if os.path.isfile(fileOrderbook) == True else None
+            last_fetch[ex][pair] = {
+                                    'history': None, #accessHistory+1,
+                                    'orderbook': None #accessOrderbook+1,
+                                    } # pair
 
-                last_fetch[ex][pair] = {
-                                        'history': None, #accessHistory+1,
-                                        'orderbook': None #accessOrderbook+1,
-                                        } # pair
-                last_fetch[ex][pair]['history'] = accessHistory
-                last_fetch[ex][pair]['orderbook'] = accessOrderbook        
-        except Exception:
-            pass
+            try:
+                fileHistory = "{}/{}/history/{}.{}.csv".format(os.getcwd(), data_folder, 
+                                                            exchanges[ex].name, pair.replace("/","-"))
+                if os.path.isfile(fileHistory) == True:
+                    accessHistory = int(tail(fileHistory, 1)[0].split(csv_separator)[1])+1
 
+            except IOError:
+                FixNullBytes(fileHistory)   
+                            
+            except Exception:
+                pass
+            
+            try:
+                fileOrderbook = "{}/{}/orderbook/{}.{}.csv".format(os.getcwd(), data_folder, 
+                                                            exchanges[ex].name, pair.replace("/","-"))
+                if os.path.isfile(fileOrderbook) == True:
+                    lastline = tail(fileOrderbook, 1)[0].split(csv_separator)
+                    #accessOrderbook = pd.Timestamp(lastline[0]) #.tz_localize('UTC')
+                    dt = datetime.strptime(lastline[0], "%Y-%m-%d %H:%M:%S.%f")
+                    accessOrderbook = int(time.mktime(dt.timetuple())*1000 + dt.microsecond/1000)
+
+            except IOError:
+                FixNullBytes(fileOrderbook)            
+
+            except Exception:
+                pass
+
+            last_fetch[ex][pair]['history'] = accessHistory
+            last_fetch[ex][pair]['orderbook'] = accessOrderbook        
+        
     return last_fetch, ex_pairs
 
 
@@ -216,13 +247,13 @@ async def main():
     exchanges = Init(my_exchanges)
     print("Done.")
 
-    print("Checking files...", end="", flush=True)
-    files = glob.glob("{}/{}/history/*.csv".format(os.getcwd(), data_folder)) + \
-            glob.glob("{}/{}/orderbook/*.csv".format(os.getcwd(), data_folder))
-    tasks = []
-    for file in files:
-        FixNullBytes(file)
-    print("OK.")
+    # print("Checking files...", end="", flush=True)
+    # files = glob.glob("{}/{}/history/*.csv".format(os.getcwd(), data_folder)) + \
+    #         glob.glob("{}/{}/orderbook/*.csv".format(os.getcwd(), data_folder))
+    # tasks = []
+    # for file in files:
+    #     FixNullBytes(file)
+    # print("OK.")
 
     print("Loading exchanges...")    
     tasks = []
@@ -246,7 +277,7 @@ async def main():
             ex_obj, exchange = ex[1], ex[0]
             for pair in ex_pairs[exchange]:
                 tasks.append(asyncio.ensure_future(OrderBook(ex_obj, pair, last_fetch)))
-                #tasks.append(asyncio.ensure_future(History(ex_obj, pair, last_fetch)))
+                tasks.append(asyncio.ensure_future(History(ex_obj, pair, last_fetch)))
     except Exception:
         pass
     finally:
