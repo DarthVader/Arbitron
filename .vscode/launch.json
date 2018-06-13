@@ -11,6 +11,16 @@
             "program": "${file}"
         },
         {
+            "name": "Python: parameters",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "cwd": "D:/Git/Arbitron/data/history",
+            "args": [
+                "-f YoBit.ETH-USD.csv"
+            ]            
+        },        
+        {
             "name": "Python: Attach",
             "type": "python",
             "request": "attach",

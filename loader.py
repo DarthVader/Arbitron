@@ -29,7 +29,7 @@ my_exchanges = [
     'bittrex',
     'cryptopia',
     'exmo',
-    'hitbtc',
+    #'hitbtc2',
     'kraken',
     'okex',
     'poloniex',
@@ -276,7 +276,7 @@ async def main():
         for ex in exchanges.items(): # running concurrent tasks to fetch data
             ex_obj, exchange = ex[1], ex[0]
             for pair in ex_pairs[exchange]:
-                tasks.append(asyncio.ensure_future(OrderBook(ex_obj, pair, last_fetch)))
+                #tasks.append(asyncio.ensure_future(OrderBook(ex_obj, pair, last_fetch)))
                 tasks.append(asyncio.ensure_future(History(ex_obj, pair, last_fetch)))
     except Exception:
         pass

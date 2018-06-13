@@ -1,0 +1,1 @@
+python load_history_from_csv.py -f /data/history/EXMO.ETH-USD.csv
