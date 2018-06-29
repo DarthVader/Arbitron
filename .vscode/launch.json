@@ -11,7 +11,7 @@
             "program": "${file}"
         },
         {
-            "name": "Python: parameters",
+            "name": "Python: parameters=CSV",
             "type": "python",
             "request": "launch",
             "program": "${file}",
@@ -20,6 +20,16 @@
                 "-f YoBit.ETH-USD.csv"
             ]            
         },        
+        {
+            "name": "Python: parameters=IP",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "args": [
+                "--ip",
+                "79.111.12.34"
+            ]            
+        }, 
         {
             "name": "Python: Attach",
             "type": "python",
