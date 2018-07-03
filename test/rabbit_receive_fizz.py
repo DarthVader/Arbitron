@@ -10,10 +10,12 @@ def callback(ch, method, properties, body):
 if __name__ == '__main__':
     try:
         cred = pika.credentials.PlainCredentials(username="mike", password="cawa")
-        connection = pika.BlockingConnection(pika.ConnectionParameters('10.7.0.11', credentials=cred))
+        connection = pika.BlockingConnection(
+                        pika.ConnectionParameters('10.7.0.11', 
+                        credentials=cred))
         channel = connection.channel()
 
-        channel.queue_declare(queue="fizz")
+        #channel.queue_declare(queue="fizz")
         channel.basic_consume(callback, queue="fizz", no_ack=True)
 
         print(" [*] Waiting for messages. To exit press Ctrl+C")
