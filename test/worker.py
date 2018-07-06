@@ -1,3 +1,4 @@
+import pika
 import os, sys, argparse, time, socket, ipgetter
 import numpy as np
 from ipaddress import ip_address
@@ -6,39 +7,28 @@ from time import sleep
 from datetime import datetime, timezone, timedelta
 from pytz import utc
 from cassandra.cluster import Cluster, BatchStatement, ConsistencyLevel
+import requests, json
+from requests.auth import HTTPBasicAuth
 
 
 date_formatter = "%Y-%m-%d %H:%M:%S.%f"
 host = "127.0.0.1"
 user = "cassandra"
 password = "cassandra"
-nodes = ['127.0.0.1', '10.7.0.10', '10.7.0.20']
+nodes = ['127.0.0.1', '10.7.0.11', '10.7.0.10', '10.7.0.20']
+
+rabbit_nodes = ['10.7.0.11']
+rabbit_port = 15672  # for getActiveWorkers. It uses http api of rabbitmq_management plugin
+rabbit_user= "rabbit"
+rabbit_pass= "rabbit"
+queue_name = "pacemaker"
+
 common_delay = 3000
-worker_version = '1.0.1'
+worker_version = '1.0.3'
 workers_table = 'temp.workers'
 log_table = 'temp.log'
 exchange = 'Test exchange'
 ttl_factor = 6 # time to live. Worker is assumed to be dead after expiration time, defined as [common_delay * ttl_factor].
-
-
-def Select(cql):
-    #print(cql)
-    rows = session.execute(cql, timeout=5)
-    # cols = ""
-    # for col in rows.column_names:
-    #     cols += "{}\t".format(col)
-    # print(cols)
-
-    for row in rows:
-        r = ""
-        for i in range(len(row._fields)):
-            r = r + "{}\t".format(row[i])
-        print(r)
-
-
-def Insert(cql):
-    print(cql)
-    session.execute(cql, timeout=5)
 
 
 def getCurrentTimestamp():
@@ -52,18 +42,53 @@ def getTimestamp(dt):
     #return int(time.mktime(d.timetuple())*1e3 + d.microsecond/1e3)
 
 
-def getWorkersCount():
-    cql = "select count(*) from {} limit 1".format(workers_table)
-    try:
-        for row in session.execute(cql, timeout=5):
-            total_workers = row[0]     
-    except Exception as e:
-        total_workers = None
-    finally:
-        return total_workers
+def getActiveWorkers():
+    req = "http://{}:{}/api/consumers".format(rabbit_nodes[0], rabbit_port)
+    consumers = requests.get(req, auth=HTTPBasicAuth(rabbit_user, rabbit_pass)).json()
+    workers = [x['queue']['name'] for x in consumers]
+    return workers
+
+
+def callback(ch, method, properties, body):
+    #print("- Received pace signal from {}".format(str(body)))
+    start = getCurrentTimestamp() # starting time
+
+    batch = BatchStatement(consistency_level=ConsistencyLevel.ONE)
+    timestamp = getCurrentTimestamp()
+    last_run = timestamp
+    # Fetch history, orderbook START
+    # ---
+    # Fetch history, orderbook END
+    exchange = 'Test'
+    worker_delay = 0
+    workers_count = len(getActiveWorkers())
+
+    # if you see "tuple index out of range" - it means that something is wrong with parameters, quotes or commas in the following cql
+    cql = "INSERT INTO {} (exchange, ip, last_run, common_delay, worker_name, worker_version) " \
+            "VALUES('{}', '{}', {}, {}, '{}', '{}') USING TTL {}".format(workers_table, 
+            exchange, ip, last_run, common_delay, worker_name, worker_version, 
+            int(common_delay/1000 * ttl_factor))
+
+    #session.execute(cql, timeout=5)
+    batch.add(cql)
+
+    # insert to log
+    # message = "worker={}".format(host_name)
+    # cql = "INSERT INTO {} (id, ip, last_run, worker_version, workers_count, message) " \
+    #     "VALUES(now(), '{}', {}, '{}', {}, '{}')".format(log_table, ip, timestamp, timestamp, worker_version, workers_count, message)
+    
+    # #session.execute(cql, timeout=5)
+    # batch.add(cql)    
+    now = getCurrentTimestamp()
+    session.execute(batch, timeout=common_delay)
+
+    print("{} - {Fore.GREEN}{}{Fore.RESET} -> {Fore.CYAN}{}{Fore.RESET},  " \
+          "active workers: {Fore.YELLOW}{}{Fore.RESET},  last_run: {},  pace signal: {}".format(
+            datetime.now(), ip, workers_table, workers_count, last_run, body.decode('utf-8'), Fore=Fore))
 
 
 if __name__ == '__main__':
+    init(convert=True) # colorama init  
     worker_name = os.path.basename(__file__)
 
     init(convert=True) # color printing
@@ -74,96 +99,48 @@ if __name__ == '__main__':
     ip = ipgetter.myip()
     host_name = socket.gethostname()
 
-    print("Connecting to Cassandra instance from IP={Fore.GREEN}{}{Fore.RESET}, HOST={}".format(ip, host_name, Fore=Fore)) #, end="", flush=False)
+    print("Worker v.{}".format(worker_version))
+
+    ##--------------- Message broker ------------------
+    print("Connecting to pacemaker server...", end='', flush=False)
+    try:
+        cred = pika.credentials.PlainCredentials(username=rabbit_user, password=rabbit_pass)
+        connection = pika.BlockingConnection(pika.ConnectionParameters(rabbit_nodes[0], credentials=cred))
+        channel = connection.channel()
+        channel.queue_declare(queue="{}".format(ip), durable=False)
+
+    except Exception as e:
+        print(Fore.RED+Style.BRIGHT+"FAILED!{Style.RESET_ALL}\nCannot connect to pacemaker".format(e.args[0], Fore=Fore, Style=Style))
+        sys.exit()
+
+    print(Fore.GREEN+Style.BRIGHT+"SUCCESS."+Style.RESET_ALL)
+
+    ##--------------- Database ------------------
+    print("Connecting to Cassandra instance from IP={Fore.GREEN}{Style.BRIGHT}{} ({}){Style.RESET_ALL}".format(ip, host_name, Fore=Fore, Style=Style)) #, end="", flush=False)
     try:
         cluster = Cluster(contact_points=nodes, port=9042) #, auth_provider=auth_provider)
         session = cluster.connect(keyspace='temp')
-        
+
     except Exception as e: #OSError as e:
-        print("{Fore.RED} {} {Style.RESET_ALL}".format(e.args[0], Fore=Fore, Style=Style))
+        print(Fore.RED+Style.BRIGHT+"{}{Style.RESET_ALL}".format(e.args[0], Style=Style))
         sys.exit()
     
     try:
-        while True:
-            start = getCurrentTimestamp() # starting time
-            total_workers = getWorkersCount()
-            #cql = "select * from {} where ip='{}' and exchange='{}' limit 1".format(workers_table, ip, exchange)
-            cql = "select * from {} where exchange='{}' limit 1".format(workers_table, exchange)
-            res = session.execute(cql)
-            if len(res.current_rows) == 0: # empty workers table
-                # insert initial rows to workers table
-                last_run = None
-                worker_last_run = None
-                worker_delay = 0
-                workers_count = total_workers + 1
-                message = "newbie"
-            else:
-                for row in res:
-                    last_run = row.last_run
-                    worker_last_run = row.worker_last_run
-                    worker_delay = row.worker_delay
-                    worker_name = row.worker_name
-                    workers_count = row.workers_count
-                    break
-                #message = exchange
-                # Insert synchronization delay calculation...
-                if workers_count != total_workers and total_workers != 0:
-                    #print(last_run)
-                    #worker_delay = int(datetime.utcnow() - last_run + timedelta(milliseconds = (common_delay / workers_count + common_delay)))
-                    #worker_delay = last_run + timedelta(milliseconds=common_delay / workers_count) - datetime.now()
-                    #print(worker_delay)
-                    #sleep(worker_delay / 1000)
-                    pass
-                else:
-                    worker_delay = 0
-                # Synchronization delay calculation ends
+        # cred = pika.credentials.PlainCredentials(username="mike", password="cawa")
+        # connection = pika.BlockingConnection(pika.ConnectionParameters('10.7.0.11', credentials=cred))
+        # channel = connection.channel()
+        # channel.basic_consume(callback, queue="{}".format(ip), no_ack=True)
 
-            batch = BatchStatement(consistency_level=ConsistencyLevel.ONE)
-            timestamp = getCurrentTimestamp()
-            # Fetch history, orderbook START
-            # ---
-            # Fetch history, orderbook END
-            cql = "INSERT INTO {} (exchange, ip, last_run, worker_last_run, common_delay, worker_delay, worker_name, worker_version, workers_count) " \
-                    "VALUES('{}', '{}', {}, {}, {}, {}, '{}', '{}', {}) USING TTL {}".format(workers_table, exchange,
-                    ip, timestamp, timestamp, common_delay, worker_delay, worker_name, worker_version, workers_count, int(common_delay/1000 * ttl_factor))
-            #session.execute(cql, timeout=5)
-            batch.add(cql)
-
-            # insert to log
-            message = "worker={}, delay={}".format(host_name, common_delay + worker_delay)
-            cql = "INSERT INTO {} (id, ip, last_run, worker_last_run, worker_version, workers_count, message) " \
-                "VALUES(now(), '{}', {}, {}, '{}', {}, '{}')".format(log_table, ip, timestamp, timestamp, worker_version, workers_count, message)
-            
-            #session.execute(cql, timeout=5)
-            batch.add(cql)
-            
-            now = getCurrentTimestamp()
-            
-            lag = 0
-            if last_run != None:
-                ts = getTimestamp(last_run)
-                lag = (now - start)
-                delay = np.max(common_delay - (now - ts)/1000, 0) - lag  # the last lag/2 - is approximate time for session to execute batch query
-            else: 
-                delay = common_delay
-            
-            #lag = timedelta(days=0, seconds=tdelta.seconds, microseconds=tdelta.microseconds)
-            #time.sleep(np.max((common_delay-lag),0) / 1000)
-            time.sleep(delay / 1000)
-            session.execute(batch, timeout=common_delay)
-
-            print("{} - {Fore.GREEN}{}{Fore.RESET} -> {Fore.CYAN}{}{Fore.RESET},  active workers: {Fore.YELLOW}{}{Fore.RESET},  last_run: {},  inner lag: {} ms,  delay: {} ms".format(
-                    datetime.now(), ip, workers_table, workers_count, last_run, lag, delay, Fore=Fore))           
-
-            
+        channel.basic_consume(callback, queue="{}".format(ip), no_ack=True)
+        print("Waiting for pacemaker signal... To exit press Ctrl+C", end="\r", flush=True)
+        channel.start_consuming()
 
     except KeyboardInterrupt:
         print("\nLeaving by CTRL-C")
+        connection.close()
 
     except Exception as e:
-        print(e)
+        print("\n".format(e))
+        connection.close()
+    
         
-
-
-
-    #print("Done.")

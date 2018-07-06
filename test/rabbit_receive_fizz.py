@@ -4,7 +4,7 @@ import pika
 
 
 def callback(ch, method, properties, body):
-    print(" [x] Received '{}'".format(body))
+    print(" [x] Received {}".format(body))
 
 
 if __name__ == '__main__':

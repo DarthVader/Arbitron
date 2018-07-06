@@ -12,14 +12,16 @@ db_user = "cassandra"
 db_password = "cassandra"
 cassandra_nodes = ['127.0.0.1', '10.7.0.11', '10.7.0.20']
 #cassandra_nodes = ['10.7.0.56']
+
+pacemaker_version = '1.0.3'
 rabbit_nodes = ['10.7.0.11']
 rabbit_port = 15672  # for getActiveWorkers. It uses http api of rabbitmq_management plugin
-
-workers_table = 'temp.workers'
-common_delay = 3000
 rabbit_user= "rabbit"
 rabbit_pass= "rabbit"
 queue_name = "pacemaker"
+
+workers_table = 'temp.workers'
+common_delay = 3000
 
 
 def getWorkers(session):
@@ -42,7 +44,9 @@ def getActiveWorkers():
 
 
 if __name__ == '__main__':
-    init(convert=True) # colorama init        
+    init(convert=True) # colorama init      
+    print("Pacemaker v.{}".format(pacemaker_version))
+
     ##--------------- Message broker ------------------
     print("Connecting to pacemaker...", end='', flush=False)
     try:
@@ -91,8 +95,8 @@ if __name__ == '__main__':
                     i += 1
                     sleep(common_delay/len(workers)/1000)
             else:
-                print("Waiting for workers...\t\t\t\t\t", end="\r", flush=True)
-                sleep(2)
+                print("Waiting for workers...{0: <40}".format(""), end="\r", flush=True)
+                sleep(1)
 
         except KeyboardInterrupt:
             print("\nLeaving by CTRL-C")
@@ -100,9 +104,8 @@ if __name__ == '__main__':
             sys.exit()
 
         except Exception as e:
-            connection.close()
             print(e)
-            sys.exit()
-            #sleep(2)
-
-    #connection.close()
+            #connection.close()
+            #sys.exit()
+            
+            
