@@ -24,7 +24,7 @@ rabbit_pass= "rabbit"
 queue_name = "pacemaker"
 
 common_delay = 3000
-worker_version = '1.0.4'
+worker_version = '1.0.6'
 workers_table = 'temp.workers'
 log_table = 'temp.log'
 exchange = 'Test exchange'
@@ -50,46 +50,47 @@ def getActiveWorkers():
 
 
 def callback(ch, method, properties, body):
-    #print("- Received pace signal from {}".format(str(body)))
-    start = getCurrentTimestamp() # starting time
 
-    batch = BatchStatement(consistency_level=ConsistencyLevel.ONE)
-    timestamp = getCurrentTimestamp()
-    last_run = timestamp
-    # Fetch history, orderbook START
-    # ---
-    # Fetch history, orderbook END
-    exchange = 'Test'
-    worker_delay = 0
-    workers_count = len(getActiveWorkers())
-
-    # if you see "tuple index out of range" - it means that something is wrong with parameters, quotes or commas in the following cql
-    cql = "INSERT INTO {} (exchange, ip, last_run, common_delay, worker_name, worker_version) " \
-            "VALUES('{}', '{}', {}, {}, '{}', '{}') USING TTL {}".format(workers_table, 
-            exchange, ip, last_run, common_delay, worker_name, worker_version, 
-            int(common_delay/1000 * ttl_factor))
-
-    #session.execute(cql, timeout=5)
-    batch.add(cql)
-
-    # insert to log
-    message = "worker={}".format(host_name)
-    cql = "INSERT INTO {} (id, ip, last_run, worker_version, workers_count, message) " \
-        "VALUES(now(), '{}', {}, '{}', {}, '{}')".format(log_table, 
-                        ip, timestamp, worker_version, workers_count, message)
-    
-    #session.execute(cql, timeout=5)
-    batch.add(cql) 
-    
-    now = getCurrentTimestamp()
     try:
+        #print("- Received pace signal from {}".format(str(body)))
+        start = getCurrentTimestamp() # starting time
+
+        batch = BatchStatement(consistency_level=ConsistencyLevel.ONE)
+        timestamp = getCurrentTimestamp()
+        last_run = timestamp
+        # Fetch history, orderbook START
+        # ---
+        # Fetch history, orderbook END
+        exchange = 'Test'
+        worker_delay = 0
+        #workers_count = len(getActiveWorkers())
+
+        # if you see "tuple index out of range" - it means that something is wrong with parameters, quotes or commas in the following cql
+        cql = "INSERT INTO {} (exchange, ip, last_run, common_delay, worker_name, worker_version) " \
+                "VALUES('{}', '{}', {}, {}, '{}', '{}') USING TTL {}".format(workers_table, 
+                exchange, ip, last_run, common_delay, worker_name, worker_version, 
+                int(common_delay/1000 * ttl_factor))
+
+        #session.execute(cql, timeout=5)
+        batch.add(cql)
+
+        # insert to log
+        message = "{}".format(host_name)
+        cql = "INSERT INTO {0} (id, ip, last_run, worker_version, message) " \
+            "VALUES(now(), '{1}', {2}, '{3}', '{4}')".format(log_table, 
+                            ip, timestamp, worker_version, message)
+        
+        #session.execute(cql, timeout=5)
+        batch.add(cql) 
+        
+        #now = getCurrentTimestamp()
         session.execute(batch, timeout=common_delay)
         print("{} - {Fore.GREEN}{}{Fore.RESET} -> {Fore.CYAN}{}{Fore.RESET},  " \
-            "active workers: {Fore.YELLOW}{}{Fore.RESET},  last_run: {},  pace signal: {}".format(
-                datetime.now(), ip, workers_table, workers_count, last_run, body.decode('utf-8'), Fore=Fore))
+            "last_run: {},  pace signal: {}".format(
+                datetime.now(), ip, workers_table, last_run, body.decode('utf-8'), Fore=Fore))
     
     except Exception as e:
-        print(e)
+        print("\n".format(e))
 
 
 if __name__ == '__main__':
@@ -102,7 +103,7 @@ if __name__ == '__main__':
     # args = vars(ap.parse_args())
     # ip = args['ip']
     ip = "8.8.8.8"
-    while ip == "8.8.8.8":   # Ugly workaround to overcome bug in ipgetter! 
+    while ip == "8.8.8.8":   # Ugly workaround to overcome bug in ipgetter!
         ip = ipgetter.myip() # Sometimes it returns google address 8.8.8.8
 
     host_name = socket.gethostname()
