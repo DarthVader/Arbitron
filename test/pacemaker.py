@@ -14,7 +14,7 @@ db_password = "cassandra"
 cassandra_nodes = ['127.0.0.1', '10.7.0.11', '10.7.0.20']
 #cassandra_nodes = ['10.7.0.56']
 
-pacemaker_version = '1.0.4'
+pacemaker_version = '1.0.5'
 rabbit_nodes = ['10.7.0.11']
 rabbit_port = 15672  # for getActiveWorkers. It uses http api of rabbitmq_management plugin
 rabbit_user= "rabbit"
@@ -98,7 +98,7 @@ if __name__ == '__main__':
                                     expiration='{}'.format(int(common_delay/len(workers)))
                                 )
                             )
-                    print(" Active workers: {}. Pace signal #{} has been sent to worker {}".format(len(workers), i, worker))
+                    print("{} - Active workers: {}. Pace signal #{} has been sent to worker {}".format(datetime.now(), len(workers), i, worker))
                     i += 1
                     sleep(common_delay/len(workers)/1000)
             else:
