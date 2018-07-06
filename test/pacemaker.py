@@ -4,6 +4,7 @@ import pika
 from cassandra.cluster import Cluster, BatchStatement, ConsistencyLevel
 import sys
 from time import sleep
+from datetime import datetime, timezone, timedelta
 from colorama import init, Fore, Back, Style # color printing
 import requests, json
 from requests.auth import HTTPBasicAuth
@@ -13,7 +14,7 @@ db_password = "cassandra"
 cassandra_nodes = ['127.0.0.1', '10.7.0.11', '10.7.0.20']
 #cassandra_nodes = ['10.7.0.56']
 
-pacemaker_version = '1.0.3'
+pacemaker_version = '1.0.4'
 rabbit_nodes = ['10.7.0.11']
 rabbit_port = 15672  # for getActiveWorkers. It uses http api of rabbitmq_management plugin
 rabbit_user= "rabbit"
@@ -22,6 +23,12 @@ queue_name = "pacemaker"
 
 workers_table = 'temp.workers'
 common_delay = 3000
+
+
+def getCurrentTimestamp():
+    fmt = "%Y-%m-%d %H:%M:%S.%f"
+    dt = datetime.strptime(datetime.now().strftime(fmt), fmt)
+    return int(time.mktime(dt.timetuple())*1000 + dt.microsecond/1000)
 
 
 def getWorkers(session):
@@ -91,21 +98,19 @@ if __name__ == '__main__':
                                     expiration='{}'.format(int(common_delay/len(workers)))
                                 )
                             )
-                    print(" Pace signal #{} has been sent to worker {}".format(i, worker), end="\r", flush=True)
+                    print(" Active workers: {}. Pace signal #{} has been sent to worker {}".format(len(workers), i, worker))
                     i += 1
                     sleep(common_delay/len(workers)/1000)
             else:
-                print("Waiting for workers...{0: <40}".format(""), end="\r", flush=True)
+                print("Waiting for workers...{0: <35}".format(" "), end="\r", flush=True)
                 sleep(1)
 
         except KeyboardInterrupt:
             print("\nLeaving by CTRL-C")
-            connection.close()
+            #connection.close()
             sys.exit()
 
         except Exception as e:
             print(e)
             #connection.close()
             #sys.exit()
-            
-            

@@ -24,7 +24,7 @@ rabbit_pass= "rabbit"
 queue_name = "pacemaker"
 
 common_delay = 3000
-worker_version = '1.0.3'
+worker_version = '1.0.4'
 workers_table = 'temp.workers'
 log_table = 'temp.log'
 exchange = 'Test exchange'
@@ -73,18 +73,23 @@ def callback(ch, method, properties, body):
     batch.add(cql)
 
     # insert to log
-    # message = "worker={}".format(host_name)
-    # cql = "INSERT INTO {} (id, ip, last_run, worker_version, workers_count, message) " \
-    #     "VALUES(now(), '{}', {}, '{}', {}, '{}')".format(log_table, ip, timestamp, timestamp, worker_version, workers_count, message)
+    message = "worker={}".format(host_name)
+    cql = "INSERT INTO {} (id, ip, last_run, worker_version, workers_count, message) " \
+        "VALUES(now(), '{}', {}, '{}', {}, '{}')".format(log_table, 
+                        ip, timestamp, worker_version, workers_count, message)
     
-    # #session.execute(cql, timeout=5)
-    # batch.add(cql)    
+    #session.execute(cql, timeout=5)
+    batch.add(cql) 
+    
     now = getCurrentTimestamp()
-    session.execute(batch, timeout=common_delay)
-
-    print("{} - {Fore.GREEN}{}{Fore.RESET} -> {Fore.CYAN}{}{Fore.RESET},  " \
-          "active workers: {Fore.YELLOW}{}{Fore.RESET},  last_run: {},  pace signal: {}".format(
-            datetime.now(), ip, workers_table, workers_count, last_run, body.decode('utf-8'), Fore=Fore))
+    try:
+        session.execute(batch, timeout=common_delay)
+        print("{} - {Fore.GREEN}{}{Fore.RESET} -> {Fore.CYAN}{}{Fore.RESET},  " \
+            "active workers: {Fore.YELLOW}{}{Fore.RESET},  last_run: {},  pace signal: {}".format(
+                datetime.now(), ip, workers_table, workers_count, last_run, body.decode('utf-8'), Fore=Fore))
+    
+    except Exception as e:
+        print(e)
 
 
 if __name__ == '__main__':

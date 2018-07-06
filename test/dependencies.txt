@@ -4,3 +4,4 @@ sudo pip3 install pika
 sudo pip3 install cassandra-driver
 sudo pip3 install ipgetter
 sudo pip3 install colorama
+sudo pip3 install pytz
