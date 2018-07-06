@@ -101,7 +101,10 @@ if __name__ == '__main__':
     # ap.add_argument("--ip", nargs="?", type=ip_address, dest='ip', required=True, help="ip address")
     # args = vars(ap.parse_args())
     # ip = args['ip']
-    ip = ipgetter.myip()
+    ip = "8.8.8.8"
+    while ip == "8.8.8.8":   # Ugly workaround to overcome bug in ipgetter! 
+        ip = ipgetter.myip() # Sometimes it returns google address 8.8.8.8
+
     host_name = socket.gethostname()
 
     print("Worker v.{}".format(worker_version))
