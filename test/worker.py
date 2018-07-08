@@ -17,7 +17,7 @@ user = "cassandra"
 password = "cassandra"
 nodes = ['127.0.0.1', '10.7.0.11', '10.7.0.10', '10.7.0.20']
 
-rabbit_nodes = ['10.7.0.11']
+rabbit_nodes = ['10.7.0.1', '10.7.0.11']
 rabbit_port = 15672  # for getActiveWorkers. It uses http api of rabbitmq_management plugin
 rabbit_user= "rabbit"
 rabbit_pass= "rabbit"
