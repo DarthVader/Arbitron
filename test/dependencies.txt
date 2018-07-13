@@ -1,7 +1,9 @@
-python3
-pip3
-sudo pip3 install pika
-sudo pip3 install cassandra-driver
-sudo pip3 install ipgetter
-sudo pip3 install colorama
-sudo pip3 install pytz
+python3.6
+pip3.6
+pip3.6 install pika
+pip3.6 install cassandra-driver
+pip3.6 install ipgetter
+pip3.6 install colorama
+pip3.6 install pytz
+pip3.6 install numpy
+pip3.6 install requests

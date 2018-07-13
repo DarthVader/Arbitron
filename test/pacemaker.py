@@ -14,7 +14,7 @@ db_password = "cassandra"
 cassandra_nodes = ['127.0.0.1', '10.7.0.11', '10.7.0.20']
 #cassandra_nodes = ['10.7.0.56']
 
-pacemaker_version = '1.0.5'
+pacemaker_version = '1.0.6'
 rabbit_nodes = ['10.7.0.11']
 rabbit_port = 15672  # for getActiveWorkers. It uses http api of rabbitmq_management plugin
 rabbit_user= "rabbit"
@@ -50,6 +50,13 @@ def getActiveWorkers():
     return workers
 
 
+def resetRabbit():
+    cred = pika.credentials.PlainCredentials(username=rabbit_user, password=rabbit_pass)
+    connection = pika.BlockingConnection(pika.ConnectionParameters(rabbit_nodes[0], credentials=cred))
+    channel = connection.channel()
+    channel.queue_declare(queue=queue_name, durable=False)
+    return channel
+
 if __name__ == '__main__':
     init(convert=True) # colorama init      
     print("Pacemaker v.{}".format(pacemaker_version))
@@ -57,11 +64,12 @@ if __name__ == '__main__':
     ##--------------- Message broker ------------------
     print("Connecting to pacemaker...", end='', flush=False)
     try:
-        cred = pika.credentials.PlainCredentials(username=rabbit_user, password=rabbit_pass)
-        connection = pika.BlockingConnection(
-                        pika.ConnectionParameters(rabbit_nodes[0], credentials=cred))
-        channel = connection.channel()
-        channel.queue_declare(queue=queue_name, durable=False)
+        # cred = pika.credentials.PlainCredentials(username=rabbit_user, password=rabbit_pass)
+        # connection = pika.BlockingConnection(
+        #                 pika.ConnectionParameters(rabbit_nodes[0], credentials=cred))
+        # channel = connection.channel()
+        # channel.queue_declare(queue=queue_name, durable=False)
+        channel = resetRabbit()
         
     except Exception as e:
         print(Fore.RED+Style.BRIGHT+"FAILED!{Style.RESET_ALL}\nCannot connect to pacemaker".format(e.args[0], Fore=Fore, Style=Style))
@@ -104,6 +112,7 @@ if __name__ == '__main__':
             else:
                 print("Waiting for workers...{0: <35}".format(" "), end="\r", flush=True)
                 sleep(1)
+                channel = resetRabbit()
 
         except KeyboardInterrupt:
             print("\nLeaving by CTRL-C")
@@ -113,4 +122,4 @@ if __name__ == '__main__':
         except Exception as e:
             print(e)
             #connection.close()
-            sys.exit()
+            #sys.exit()
