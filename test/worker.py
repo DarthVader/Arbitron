@@ -9,7 +9,9 @@ from pytz import utc
 from cassandra.cluster import Cluster, BatchStatement, ConsistencyLevel
 import requests, json
 from requests.auth import HTTPBasicAuth
+from pprint import pprint
 
+worker_version = '1.0.7'
 
 date_formatter = "%Y-%m-%d %H:%M:%S.%f"
 host = "127.0.0.1"
@@ -24,7 +26,6 @@ rabbit_pass= "rabbit"
 queue_name = "pacemaker"
 
 common_delay = 3000
-worker_version = '1.0.6'
 workers_table = 'temp.workers'
 log_table = 'temp.log'
 exchange = 'Test exchange'
@@ -64,6 +65,8 @@ def callback(ch, method, properties, body):
         exchange = 'Test'
         worker_delay = 0
         #workers_count = len(getActiveWorkers())
+
+        pprint(body.decode()) # need to be decoded in order to remove leading 'b' symbol
 
         # if you see "tuple index out of range" - it means that something is wrong with parameters, quotes or commas in the following cql
         cql = "INSERT INTO {} (exchange, ip, last_run, common_delay, worker_name, worker_version) " \
