@@ -1,6 +1,6 @@
 #!/usr/bin/python3.6
 
-import asyncio
+import asyncio, sys
 import ccxt.async as ccxt
 from ccxt.async import Exchange
 
@@ -9,7 +9,7 @@ my_exchanges = [
     'bittrex',
     'cryptopia',
     'exmo',
-    #'hitbtc2',
+    'hitbtc2',
     'kraken',
     'okex',
     'poloniex',

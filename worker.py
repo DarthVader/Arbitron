@@ -1,7 +1,7 @@
 #!/usr/bin/python3.6
 
 # worker
-__version__ = '1.0.9'
+__version__ = '1.1.0'
 
 import pika
 import os, sys, argparse, time, socket, ipgetter
@@ -52,12 +52,10 @@ def callback(ch, method, properties, body):
         batch = BatchStatement(consistency_level=ConsistencyLevel.ONE)
         timestamp = getCurrentTimestamp()
         last_run = timestamp
+
         # Fetch history, orderbook START
         # ---
         # Fetch history, orderbook END
-        #exchange = 'Test'
-        #worker_delay = 0
-        #workers_count = len(getActiveWorkers())
 
         print(body.decode()) # need to be decoded in order to remove leading 'b' symbol
 
@@ -79,9 +77,8 @@ def callback(ch, method, properties, body):
         
         #now = getCurrentTimestamp()
         session.execute(batch, timeout=common_delay)
-        print("{} - {Fore.GREEN}{}{Fore.RESET} -> {Fore.CYAN}{}{Fore.RESET},  " \
-            "last_run: {},  pace signal: {}".format(
-                datetime.now(), ip, cfg.workers_table, last_run, body.decode('utf-8'), Fore=Fore))
+        print(f"{datetime.now()}-{Fore.GREEN}{ip}{Fore.RESET}=>{Fore.CYAN}{cfg.workers_table}{Fore.RESET}, " \
+            f"last_run: {last_run}, body: {body.decode('utf-8')}".format(Fore=Fore))
     
     except Exception as e:
         print(e)

@@ -15,6 +15,7 @@ class Settings():
         self.cassandra_port = int(self.config['database']['port'])
         self.cassandra_nodes = self.config['database']['nodes'].replace(" ","").split(",")
         #cassandra_nodes = ['10.7.0.56']
+        self.default_fetch_size = int(self.config['database']['default_fetch_size'])
 
         # pacemaker settings
         self.rabbit_nodes= self.config['pacemaker']['nodes'].replace(" ","").split(",")

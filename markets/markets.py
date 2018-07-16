@@ -4,6 +4,10 @@ import ccxt.async as ccxt
 from ccxt.async import Exchange
 
 class Markets:
+    
+    # globals (BAD, I know)
+    fiat = ['USD','EUR','JPY','UAH','USDT','RUB','CAD','NZDT']
+    allowed_tsyms = ['USD', 'USDT', 'BTC', 'ETH', 'DOGE', 'LTC', 'EUR', 'RUB'] # allowed symbols for convertion to
 
     def __init__(self):
         self.exchanges = {}         #  exchanges - dict of ccxt objects

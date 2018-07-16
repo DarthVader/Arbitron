@@ -16,20 +16,10 @@ import pandas as pd
 from pprint import pprint 
 from markets.markets import Markets
 from settings import Settings
+from database import Database
 
 cfg = Settings() # read settings from INI file
-
 common_delay = 3000 ## stub !!!
-
-# globals (BAD, I know)
-fiat = ['USD','EUR','JPY','UAH','USDT','RUB','CAD','NZDT']
-allowed_tsyms = ['USD', 'USDT', 'BTC', 'ETH', 'DOGE', 'LTC', 'EUR', 'RUB'] # allowed symbols for convertion to
-low_fee_tokens = []
-high_volume_tokens = []
-
-
-def pandas_factory(colnames, rows):
-    return pd.DataFrame(rows, columns=colnames)
 
 
 def getCurrentTimestamp():
@@ -43,8 +33,6 @@ def getActiveWorkers():
     consumers = requests.get(req, auth=HTTPBasicAuth(cfg.rabbit_user, cfg.rabbit_pass)).json()
     workers = [x['queue']['name'] for x in consumers]
     return workers
-
-
 
 
 if __name__ == '__main__':
@@ -67,35 +55,17 @@ if __name__ == '__main__':
 
     ##--------------- Database ------------------
     print("Connecting to database cluster...".format(), end="", flush=False)
-    try:
-        cluster = Cluster(contact_points=cfg.cassandra_nodes, port=cfg.cassandra_port)
-        session = cluster.connect(keyspace=cfg.settings_keyspace)
-        session.row_factory = pandas_factory
-        session.default_fetch_size = 200
-        
-        # Receiving exchanges data
-        cql = f"select id, name, delay from {cfg.exchanges_table} where enabled=true allow filtering;"
-        res = session.execute(cql, timeout=10)
-        df_exchanges = res._current_rows
-        
-        # tokens
-        cql = f"select * from {cfg.tokens_table} where enabled=true allow filtering;"
-        res = session.execute(cql, timeout=10)
-        df_tokens = res._current_rows
-
-        low_fee_tokens = df_tokens[df_tokens.low_fee==1].symbol.tolist()
-        high_volume_tokens = df_tokens[df_tokens.high_volume==1].symbol.tolist()
-
-    except Exception as e:
-        print(Fore.RED+Style.BRIGHT+"{} {Style.RESET_ALL}".format(e.args[0], Fore=Fore, Style=Style))
-        sys.exit()
-        
+    db = Database()
+    db.get_exchanges()
+    db.get_tokens()
+    my_exchanges = db.exchanges_list
+    my_tokens = db.tokens_list
     print(Fore.GREEN+Style.BRIGHT+f"{cfg.cassandra_nodes}"+Style.RESET_ALL)
 
     ##------------------- CCXT ---------------------
     print("Connecting to exchanges...".format(), end="\n", flush=False)
     markets = Markets()
-    markets.load_exchanges(exchanges_list=df_exchanges.id.values)    
+    markets.load_exchanges(exchanges_list=my_exchanges)
     print(Fore.GREEN+Style.BRIGHT+"SUCCESS."+Style.RESET_ALL)
 
 
