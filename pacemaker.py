@@ -2,19 +2,18 @@
 
 # messaging server
 
-import pika
+import pika # RabbitMQ library
 from cassandra.cluster import Cluster, BatchStatement, ConsistencyLevel
-import sys
+import sys, os
+import time
 from time import sleep
 from datetime import datetime, timezone, timedelta
 from colorama import init, Fore, Back, Style # color printing
 import requests, json
 from requests.auth import HTTPBasicAuth
 import pandas as pd
-from pprint import pprint
-import asyncio
-import ccxt.async as ccxt
-from ccxt.async import Exchange
+from pprint import pprint 
+from markets.markets import Markets
 
 
 db_user = "cassandra"
@@ -23,7 +22,7 @@ cassandra_port = 9042
 cassandra_nodes = ['127.0.0.1', '10.7.0.11', '10.7.0.20']
 #cassandra_nodes = ['10.7.0.56']
 
-__version__ = '1.1.0'
+__version__ = '1.1.1'
 rabbit_nodes = ['10.7.0.11', '127.0.0.1']
 rabbit_port = 15672  # for getActiveWorkers. It uses http api of rabbitmq_management plugin
 rabbit_user= "rabbit"
@@ -58,42 +57,14 @@ def getActiveWorkers():
 
 
 
-def Exchanges_Init(exchanges_list):
-    exchanges = {}
-    for id in exchanges_list:
-        exchange = getattr(ccxt, id)
-        # this option enables the built-in rate limiter <<=============
-        exchange.enableRateLimit = True, 
-        exchanges[id] = exchange()        
-    return exchanges
-
-
-async def Get_Exchange(exchange):
-    await exchange.load_markets()
-    print("{} market metadata loaded".format(exchange.name))
-
-
-async def Exchanges_Load(exchanges):
-    tasks = []
-    for ex in exchanges.items():
-        tasks.append(asyncio.ensure_future(Get_Exchange(ex[1])))
-    await asyncio.gather(*tasks) 
-
-
-async def Exchanges_Shutdown(exchanges):
-    for ex in exchanges.items():
-        print("Closing {}".format(ex[0]))
-        await ex[1].close()
-
-
-
 
 if __name__ == '__main__':
     init(convert=True) # colorama init
     print(f"Pacemaker v.{__version__}")
+    print(f"pika version: {pika.__version__}")
 
     ##--------------- Message broker ------------------
-    print("Connecting to pacemaker...", end='', flush=False)
+    print("Connecting to pacemaker server...", end='', flush=False)
     try:
         cred = pika.credentials.PlainCredentials(username=rabbit_user, password=rabbit_pass)
         connection = pika.BlockingConnection(pika.ConnectionParameters(rabbit_nodes[0], credentials=cred))
@@ -103,7 +74,7 @@ if __name__ == '__main__':
     except Exception as e:
         print(Fore.RED+Style.BRIGHT+"FAILED!{Style.RESET_ALL}\nCannot connect to pacemaker".format(e.args[0], Fore=Fore, Style=Style))
         sys.exit()
-    print(Fore.GREEN+Style.BRIGHT+"SUCCESS."+Style.RESET_ALL)
+    print(Fore.GREEN+Style.BRIGHT+f"{rabbit_nodes[0]}"+Style.RESET_ALL)
 
     ##--------------- Database ------------------
     print("Connecting to database cluster...".format(), end="", flush=False)
@@ -129,20 +100,12 @@ if __name__ == '__main__':
     except Exception as e:
         print(Fore.RED+Style.BRIGHT+"{} {Style.RESET_ALL}".format(e.args[0], Fore=Fore, Style=Style))
         sys.exit()
-    print(Fore.GREEN+Style.BRIGHT+"SUCCESS."+Style.RESET_ALL)
+    print(Fore.GREEN+Style.BRIGHT+f"{cassandra_nodes}"+Style.RESET_ALL)
 
     ##------------------- CCXT ---------------------
     print("Connecting to exchanges...".format(), end="\n", flush=False)
-    exchanges = Exchanges_Init(df_exchanges.id.values) # init by exchanges list from settings.exchanges table
-    loop = asyncio.get_event_loop()
-    try:
-        loop.run_until_complete(Exchanges_Load(exchanges))
-    except KeyboardInterrupt:
-        print("Leaving by Ctrl-C...")
-        loop.run_until_complete(Exchanges_Shutdown(exchanges))
-        sys.exit()
-
-    #loop.run_until_complete(Exchanges_Shutdown(exchanges))
+    markets = Markets()
+    markets.load_exchanges(exchanges_list=df_exchanges.id.values)    
     print(Fore.GREEN+Style.BRIGHT+"SUCCESS."+Style.RESET_ALL)
 
 
@@ -170,12 +133,12 @@ if __name__ == '__main__':
 
         except KeyboardInterrupt:
             print("\nLeaving by CTRL-C")
-            loop.run_until_complete(Exchanges_Shutdown(exchanges))
+            #loop.run_until_complete(Exchanges_Shutdown(exchanges))
             #connection.close()
             sys.exit()
 
         except Exception as e:
-            loop.run_until_complete(Exchanges_Shutdown(exchanges))
+            #loop.run_until_complete(Exchanges_Shutdown(exchanges))
             print(e)
             #connection.close()
             sys.exit()

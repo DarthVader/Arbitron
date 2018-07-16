@@ -11,7 +11,7 @@ import requests, json
 from requests.auth import HTTPBasicAuth
 from pprint import pprint
 
-worker_version = '1.0.7'
+worker_version = '1.0.8'
 
 date_formatter = "%Y-%m-%d %H:%M:%S.%f"
 host = "127.0.0.1"
@@ -19,7 +19,7 @@ user = "cassandra"
 password = "cassandra"
 nodes = ['127.0.0.1', '10.7.0.11', '10.7.0.10', '10.7.0.20']
 
-rabbit_nodes = ['10.7.0.1', '10.7.0.11']
+rabbit_nodes = ['10.7.0.11', '10.7.0.1']
 rabbit_port = 15672  # for getActiveWorkers. It uses http api of rabbitmq_management plugin
 rabbit_user= "rabbit"
 rabbit_pass= "rabbit"
@@ -66,22 +66,20 @@ def callback(ch, method, properties, body):
         worker_delay = 0
         #workers_count = len(getActiveWorkers())
 
-        pprint(body.decode()) # need to be decoded in order to remove leading 'b' symbol
+        print(body.decode()) # need to be decoded in order to remove leading 'b' symbol
 
         # if you see "tuple index out of range" - it means that something is wrong with parameters, quotes or commas in the following cql
-        cql = "INSERT INTO {} (exchange, ip, last_run, common_delay, worker_name, worker_version) " \
-                "VALUES('{}', '{}', {}, {}, '{}', '{}') USING TTL {}".format(workers_table, 
-                exchange, ip, last_run, common_delay, worker_name, worker_version, 
-                int(common_delay/1000 * ttl_factor))
+        ttl = int(common_delay/1000 * ttl_factor)
+        cql = f"INSERT INTO {workers_table} (exchange, ip, last_run, common_delay, worker_name, worker_version) " \
+            f"VALUES('{exchange}', '{ip}', {last_run}, {common_delay}, '{worker_name}', '{worker_version}') USING TTL {ttl}"                
 
         #session.execute(cql, timeout=5)
         batch.add(cql)
 
         # insert to log
         message = "{}".format(host_name)
-        cql = "INSERT INTO {0} (id, ip, last_run, worker_version, message) " \
-            "VALUES(now(), '{1}', {2}, '{3}', '{4}')".format(log_table, 
-                            ip, timestamp, worker_version, message)
+        cql = f"INSERT INTO {log_table} (id, ip, last_run, worker_version, message) " \
+            f"VALUES(now(), '{ip}', {timestamp}, '{worker_version}', '{message}')"
         
         #session.execute(cql, timeout=5)
         batch.add(cql) 
@@ -93,7 +91,7 @@ def callback(ch, method, properties, body):
                 datetime.now(), ip, workers_table, last_run, body.decode('utf-8'), Fore=Fore))
     
     except Exception as e:
-        print("\n".format(e))
+        print(e)
 
 
 if __name__ == '__main__':
@@ -125,7 +123,7 @@ if __name__ == '__main__':
         print(Fore.RED+Style.BRIGHT+"FAILED!{Style.RESET_ALL}\nCannot connect to pacemaker".format(e.args[0], Fore=Fore, Style=Style))
         sys.exit()
 
-    print(Fore.GREEN+Style.BRIGHT+"SUCCESS."+Style.RESET_ALL)
+    print(Fore.GREEN+Style.BRIGHT+f"{rabbit_nodes[0]}"+Style.RESET_ALL)
 
     ##--------------- Database ------------------
     print("Connecting to Cassandra instance from IP={Fore.GREEN}{Style.BRIGHT}{} ({}){Style.RESET_ALL}".format(ip, host_name, Fore=Fore, Style=Style)) #, end="", flush=False)
@@ -144,7 +142,7 @@ if __name__ == '__main__':
         # channel.basic_consume(callback, queue="{}".format(ip), no_ack=True)
 
         channel.basic_consume(callback, queue="{}".format(ip), no_ack=True)
-        print("Waiting for pacemaker signal... To exit press Ctrl+C", end="\r", flush=True)
+        print("Waiting for pacemaker signals... To exit press Ctrl+C", end="\r", flush=True)
         channel.start_consuming()
 
     except KeyboardInterrupt:
@@ -152,7 +150,7 @@ if __name__ == '__main__':
         connection.close()
 
     except Exception as e:
-        print("\n".format(e))
+        print(e)
         connection.close()
     
         
