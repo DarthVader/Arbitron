@@ -1,13 +1,26 @@
-# load_pairs 1.0.0
+# load_pairs 1.0.1
 # Loads meaningful pairs to Cassandra database
 # must reside in /utils path in order to see ../markets module
+__version__ = '1.0.1'
 
-import os,sys
+import os, sys
 
 root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.append(root + "/markets") ## uses myexchanges parallel loader module
-from markets import Markets
+sys.path.append(root)
+from markets.markets import Markets
+from configparser import ConfigParser
+from cassandra.cluster import Cluster, BatchStatement, ConsistencyLevel
 
+
+config = ConfigParser()
+config.read('config.ini')
+
+db_user = config['database']['user']
+db_password = config['database']['password']
+cassandra_port = int(config['database']['port'])
+cassandra_nodes = config['database']['nodes'].replace(" ","").split(",")
+
+# custom exchanges list
 my_exchanges = [
     'binance',
     'bittrex',
@@ -41,4 +54,5 @@ if __name__ == '__main__':
     markets = Markets()
     markets.load_exchanges(exchanges_list=my_exchanges)
     markets.reload_pairs(my_tokens)
+
     a = input("Press Enter...")

@@ -1,3 +1,8 @@
+#!/usr/bin/python3.6
+
+# worker
+__version__ = '1.0.9'
+
 import pika
 import os, sys, argparse, time, socket, ipgetter
 import numpy as np
@@ -10,26 +15,14 @@ from cassandra.cluster import Cluster, BatchStatement, ConsistencyLevel
 import requests, json
 from requests.auth import HTTPBasicAuth
 from pprint import pprint
+from settings import Settings
 
-worker_version = '1.0.8'
 
-date_formatter = "%Y-%m-%d %H:%M:%S.%f"
-host = "127.0.0.1"
-user = "cassandra"
-password = "cassandra"
-nodes = ['127.0.0.1', '10.7.0.11', '10.7.0.10', '10.7.0.20']
-
-rabbit_nodes = ['10.7.0.11', '10.7.0.1']
-rabbit_port = 15672  # for getActiveWorkers. It uses http api of rabbitmq_management plugin
-rabbit_user= "rabbit"
-rabbit_pass= "rabbit"
-queue_name = "pacemaker"
+cfg = Settings() # read settings from INI file
 
 common_delay = 3000
-workers_table = 'temp.workers'
-log_table = 'temp.log'
 exchange = 'Test exchange'
-ttl_factor = 6 # time to live. Worker is assumed to be dead after expiration time, defined as [common_delay * ttl_factor].
+date_formatter = "%Y-%m-%d %H:%M:%S.%f"
 
 
 def getCurrentTimestamp():
@@ -44,8 +37,8 @@ def getTimestamp(dt):
 
 
 def getActiveWorkers():
-    req = "http://{}:{}/api/consumers".format(rabbit_nodes[0], rabbit_port)
-    consumers = requests.get(req, auth=HTTPBasicAuth(rabbit_user, rabbit_pass)).json()
+    req = "http://{}:{}/api/consumers".format(cfg.rabbit_nodes[0], cfg.rabbit_port)
+    consumers = requests.get(req, auth=HTTPBasicAuth(cfg.rabbit_user, cfg.rabbit_pass)).json()
     workers = [x['queue']['name'] for x in consumers]
     return workers
 
@@ -54,7 +47,7 @@ def callback(ch, method, properties, body):
 
     try:
         #print("- Received pace signal from {}".format(str(body)))
-        start = getCurrentTimestamp() # starting time
+        #start = getCurrentTimestamp() # starting time
 
         batch = BatchStatement(consistency_level=ConsistencyLevel.ONE)
         timestamp = getCurrentTimestamp()
@@ -62,24 +55,24 @@ def callback(ch, method, properties, body):
         # Fetch history, orderbook START
         # ---
         # Fetch history, orderbook END
-        exchange = 'Test'
-        worker_delay = 0
+        #exchange = 'Test'
+        #worker_delay = 0
         #workers_count = len(getActiveWorkers())
 
         print(body.decode()) # need to be decoded in order to remove leading 'b' symbol
 
         # if you see "tuple index out of range" - it means that something is wrong with parameters, quotes or commas in the following cql
-        ttl = int(common_delay/1000 * ttl_factor)
-        cql = f"INSERT INTO {workers_table} (exchange, ip, last_run, common_delay, worker_name, worker_version) " \
-            f"VALUES('{exchange}', '{ip}', {last_run}, {common_delay}, '{worker_name}', '{worker_version}') USING TTL {ttl}"                
+        ttl = int(common_delay/1000 * cfg.ttl_factor)
+        cql = f"INSERT INTO {cfg.workers_table} (exchange, ip, last_run, common_delay, worker_name, worker_version) " \
+            f"VALUES('{exchange}', '{ip}', {last_run}, {common_delay}, '{worker_name}', '{__version__}') USING TTL {ttl}"                
 
         #session.execute(cql, timeout=5)
         batch.add(cql)
 
         # insert to log
         message = "{}".format(host_name)
-        cql = f"INSERT INTO {log_table} (id, ip, last_run, worker_version, message) " \
-            f"VALUES(now(), '{ip}', {timestamp}, '{worker_version}', '{message}')"
+        cql = f"INSERT INTO {cfg.log_table} (id, ip, last_run, worker_version, message) " \
+            f"VALUES(now(), '{ip}', {timestamp}, '{__version__}', '{message}')"
         
         #session.execute(cql, timeout=5)
         batch.add(cql) 
@@ -88,7 +81,7 @@ def callback(ch, method, properties, body):
         session.execute(batch, timeout=common_delay)
         print("{} - {Fore.GREEN}{}{Fore.RESET} -> {Fore.CYAN}{}{Fore.RESET},  " \
             "last_run: {},  pace signal: {}".format(
-                datetime.now(), ip, workers_table, last_run, body.decode('utf-8'), Fore=Fore))
+                datetime.now(), ip, cfg.workers_table, last_run, body.decode('utf-8'), Fore=Fore))
     
     except Exception as e:
         print(e)
@@ -109,26 +102,26 @@ if __name__ == '__main__':
 
     host_name = socket.gethostname()
 
-    print("Worker v.{}".format(worker_version))
+    print("Worker version {}".format(__version__))
 
     ##--------------- Message broker ------------------
     print("Connecting to pacemaker server...", end='', flush=False)
     try:
-        cred = pika.credentials.PlainCredentials(username=rabbit_user, password=rabbit_pass)
-        connection = pika.BlockingConnection(pika.ConnectionParameters(rabbit_nodes[0], credentials=cred))
+        cred = pika.credentials.PlainCredentials(username=cfg.rabbit_user, password=cfg.rabbit_pass)
+        connection = pika.BlockingConnection(pika.ConnectionParameters(cfg.rabbit_nodes[0], credentials=cred))
         channel = connection.channel()
         channel.queue_declare(queue="{}".format(ip), durable=False)
 
     except Exception as e:
-        print(Fore.RED+Style.BRIGHT+"FAILED!{Style.RESET_ALL}\nCannot connect to pacemaker".format(e.args[0], Fore=Fore, Style=Style))
+        print(Fore.RED+Style.BRIGHT+f"FAILED!{Style.RESET_ALL}\nCannot connect to pacemaker")
         sys.exit()
 
-    print(Fore.GREEN+Style.BRIGHT+f"{rabbit_nodes[0]}"+Style.RESET_ALL)
+    print(Fore.GREEN+Style.BRIGHT+f"{cfg.rabbit_nodes[0]}"+Style.RESET_ALL)
 
     ##--------------- Database ------------------
     print("Connecting to Cassandra instance from IP={Fore.GREEN}{Style.BRIGHT}{} ({}){Style.RESET_ALL}".format(ip, host_name, Fore=Fore, Style=Style)) #, end="", flush=False)
     try:
-        cluster = Cluster(contact_points=nodes, port=9042) #, auth_provider=auth_provider)
+        cluster = Cluster(contact_points=cfg.cassandra_nodes, port=9042)
         session = cluster.connect(keyspace='temp')
 
     except Exception as e: #OSError as e:
@@ -136,11 +129,6 @@ if __name__ == '__main__':
         sys.exit()
     
     try:
-        # cred = pika.credentials.PlainCredentials(username="mike", password="cawa")
-        # connection = pika.BlockingConnection(pika.ConnectionParameters('10.7.0.11', credentials=cred))
-        # channel = connection.channel()
-        # channel.basic_consume(callback, queue="{}".format(ip), no_ack=True)
-
         channel.basic_consume(callback, queue="{}".format(ip), no_ack=True)
         print("Waiting for pacemaker signals... To exit press Ctrl+C", end="\r", flush=True)
         channel.start_consuming()
@@ -152,5 +140,3 @@ if __name__ == '__main__':
     except Exception as e:
         print(e)
         connection.close()
-    
-        

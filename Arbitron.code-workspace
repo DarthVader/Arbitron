@@ -4,5 +4,11 @@
 			"path": "."
 		}
 	],
-	"settings": {}
+	"settings": {
+		"python.autoComplete.extraPaths": [
+			"${env.SPARK_HOME}\\python",
+			"${env.SPARK_HOME}\\python\\pyspark"
+		],
+		"python.pythonPath": "C:\\Anaconda3\\python.exe"
+	}
 }
