@@ -1,5 +1,9 @@
 #!/usr/bin/python3.6
 
+# loads tokens to Database
+
+__version__ = "1.0.0"
+
 import pandas as pd
 import numpy as np
 from cassandra.cluster import Cluster

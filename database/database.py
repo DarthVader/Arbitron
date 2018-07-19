@@ -1,7 +1,7 @@
 #!/usr/bin/python3.6
 
 # Arbitron project database driver
-__version__ = '1.0.0'
+__version__ = '1.0.1'
 
 from cassandra.cluster import Cluster, BatchStatement, ConsistencyLevel
 import sys, os
@@ -21,6 +21,8 @@ class Database():
         return pd.DataFrame(rows, columns=colnames)
         
     def __init__(self):
+        init(convert=True) # colorama init 
+        self.ex_pairs = {} # special hierarchical structure which will contain exchanges and their pairs
         #self.config = config # config instance from INI file
         self.config = Settings()
         print("Connecting to database...".format(), end="", flush=False)
@@ -30,6 +32,7 @@ class Database():
             self.session = cluster.connect(keyspace=self.config.settings_keyspace)
             self.session.row_factory = self._pandas_factory
             self.session.default_fetch_size = self.config.default_fetch_size
+            print("OK")
         except Exception as e:
             print(Fore.RED+Style.BRIGHT+"{} {Style.RESET_ALL}".format(e.args[0], Fore=Fore, Style=Style))
 
@@ -37,7 +40,7 @@ class Database():
     def get_exchanges(self):
         # Receiving exchanges data
         try:
-            cql = f"select id, name, delay from {self.config.exchanges_table} where enabled=true allow filtering;"
+            cql = f"select * from {self.config.exchanges_table} where enabled=true allow filtering;"
             res = self.session.execute(cql, timeout=10)
             self.df_exchanges = res._current_rows
             self.exchanges_list = self.df_exchanges.id.tolist()
@@ -54,6 +57,22 @@ class Database():
             self.tokens_list = self.df_tokens.symbol.tolist()
             self.low_fee_tokens = self.df_tokens[self.df_tokens.low_fee==1].symbol.tolist()
             self.high_volume_tokens = self.df_tokens[self.df_tokens.high_volume==1].symbol.tolist()
+
+        except Exception as e:
+            print(Fore.RED+Style.BRIGHT+"{} {Style.RESET_ALL}".format(e.args[0], Fore=Fore, Style=Style))        
+
+
+    def get_pairs(self):
+        # tokens
+        try:
+            cql = f"select * from {self.config.pairs_table} where enabled=true allow filtering"
+            res = self.session.execute(cql, timeout=10)
+            self.df_pairs = res._current_rows
+            
+            #for _, row in self.df_pairs.iterrows():
+            #    ex, pair = row[0], row[1]
+            #    self.ex_pairs[ex] = pair
+            
         except Exception as e:
             print(Fore.RED+Style.BRIGHT+"{} {Style.RESET_ALL}".format(e.args[0], Fore=Fore, Style=Style))        
 

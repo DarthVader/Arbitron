@@ -25,6 +25,7 @@ class Settings():
         self.queue_name  = self.config['pacemaker']['queue_name']
 
         # logic
+        self.data_keyspace = self.config['logic']['data_keyspace']
         self.settings_keyspace = self.config['logic']['settings_keyspace']
         self.workers_table = self.config['logic']['workers']
         self.tokens_table = self.config['logic']['tokens']

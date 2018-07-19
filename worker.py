@@ -1,7 +1,8 @@
 #!/usr/bin/python3.6
 
 # worker
-__version__ = '1.1.0'
+# collects historic/orderbook data from exchanges using ccxt library
+__version__ = '1.1.1'
 
 import pika
 import os, sys, argparse, time, socket, ipgetter
@@ -16,11 +17,15 @@ import requests, json
 from requests.auth import HTTPBasicAuth
 from pprint import pprint
 from settings import Settings
+from database import Database
+from markets.markets import Markets
 
+print(f"Worker: {__version__}")
+cfg = Settings()    # read settings from INI file (singleton)
+db = Database()     # connecting to database (singleton)
+markets = Markets() # Markets library instance (singleton)
 
-cfg = Settings() # read settings from INI file
-
-common_delay = 3000
+common_delay = 3000 # stub !!!
 exchange = 'Test exchange'
 date_formatter = "%Y-%m-%d %H:%M:%S.%f"
 
@@ -49,21 +54,30 @@ def callback(ch, method, properties, body):
         #print("- Received pace signal from {}".format(str(body)))
         #start = getCurrentTimestamp() # starting time
 
-        batch = BatchStatement(consistency_level=ConsistencyLevel.ONE)
+        batch = BatchStatement(consistency_level=ConsistencyLevel.LOCAL_QUORUM)
         timestamp = getCurrentTimestamp()
         last_run = timestamp
 
-        # Fetch history, orderbook START
-        # ---
-        # Fetch history, orderbook END
+        # Parsing body to fetch exchanges, pairs and rate limits
+        #body = body.decode() # string values need to be decoded in order to remove leading 'b' symbol
+        body = json.loads(body)
+        job = body['exchanges']
+        pacemaker_version = body['version']
+        pacemaker_time = body['timestamp']
+        exchanges = job.keys()
 
-        print(body.decode()) # need to be decoded in order to remove leading 'b' symbol
+        for exchange in exchanges:
+            pairs = list(job[exchange]["pairs"])
+            ratelimit = job[exchange]["ratelimit"]
+            print(f"{exchange} (rate limit={ratelimit}ms): {pairs}")
+            # Fetch history, orderbook START
+            # ---
+            # Fetch history, orderbook END
 
         # if you see "tuple index out of range" - it means that something is wrong with parameters, quotes or commas in the following cql
-        ttl = int(common_delay/1000 * cfg.ttl_factor)
+        ttl = int(common_delay/1000 * int(cfg.ttl_factor))
         cql = f"INSERT INTO {cfg.workers_table} (exchange, ip, last_run, common_delay, worker_name, worker_version) " \
             f"VALUES('{exchange}', '{ip}', {last_run}, {common_delay}, '{worker_name}', '{__version__}') USING TTL {ttl}"                
-
         #session.execute(cql, timeout=5)
         batch.add(cql)
 
@@ -78,13 +92,14 @@ def callback(ch, method, properties, body):
         #now = getCurrentTimestamp()
         session.execute(batch, timeout=common_delay)
         print(f"{datetime.now()}-{Fore.GREEN}{ip}{Fore.RESET}=>{Fore.CYAN}{cfg.workers_table}{Fore.RESET}, " \
-            f"last_run: {last_run}, body: {body.decode('utf-8')}".format(Fore=Fore))
+            f"last_run: {last_run}, pacemaker: {pacemaker_version}, pacemaker ts: {pacemaker_time} ".format(Fore=Fore))
     
     except Exception as e:
-        print(e)
+        print(f"{Fore.RED}{e}{Fore.RESET}")
 
 
 if __name__ == '__main__':
+
     init(convert=True) # colorama init  
     worker_name = os.path.basename(__file__)
 
@@ -95,11 +110,10 @@ if __name__ == '__main__':
     # ip = args['ip']
     ip = "8.8.8.8"
     while ip == "8.8.8.8":   # Ugly workaround to overcome bug in ipgetter!
-        ip = ipgetter.myip() # Sometimes it returns google address 8.8.8.8
+        ip = ipgetter.myip() # This bug sometimes returns google address 8.8.8.8 instead of the real one
 
     host_name = socket.gethostname()
 
-    print("Worker version {}".format(__version__))
 
     ##--------------- Message broker ------------------
     print("Connecting to pacemaker server...", end='', flush=False)

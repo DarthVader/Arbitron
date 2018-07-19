@@ -1,7 +1,8 @@
 #!/usr/bin/python3.6
 
-# messaging server
-__version__ = '1.1.2'
+# pacemaker
+# dispatching server
+__version__ = '1.1.4'
 
 import pika # RabbitMQ library
 from cassandra.cluster import Cluster, BatchStatement, ConsistencyLevel
@@ -39,7 +40,6 @@ if __name__ == '__main__':
     init(convert=True) # colorama init    
     print(f"Pacemaker {__version__}")
     print(f"pika version: {pika.__version__}")
-
     ##--------------- Message broker ------------------
     print("Connecting to pacemaker server...", end='', flush=False)
     try:
@@ -54,10 +54,10 @@ if __name__ == '__main__':
     print(Fore.GREEN+Style.BRIGHT+f"{cfg.rabbit_nodes[0]}"+Style.RESET_ALL)
 
     ##--------------- Database ------------------
-    print("Connecting to database cluster...".format(), end="", flush=False)
     db = Database()
     db.get_exchanges()
     db.get_tokens()
+    db.get_pairs()
     my_exchanges = db.exchanges_list
     my_tokens = db.tokens_list
     print(Fore.GREEN+Style.BRIGHT+f"{cfg.cassandra_nodes}"+Style.RESET_ALL)
@@ -66,18 +66,44 @@ if __name__ == '__main__':
     print("Connecting to exchanges...".format(), end="\n", flush=False)
     markets = Markets()
     markets.load_exchanges(exchanges_list=my_exchanges)
-    print(Fore.GREEN+Style.BRIGHT+"SUCCESS."+Style.RESET_ALL)
-
-
-    # round-robin message dispatching
+    print(Fore.GREEN+Style.BRIGHT+"READY."+Style.RESET_ALL)
+    
+    # Code for dispatching jobs to workers. (round-robin)
     while True:
+        # There should be a code for creating and scheduling jobs for workers
+        # Job must contains list of exchanges and pairs that should be queried and saved to database
+        job = { 
+            "version": f"{__version__}",
+            "exchanges": {
+                "yobit": {
+                        "ratelimit": 3000,
+                        "pairs": ["BCH/BTC"]
+                },
+                "binance": {
+                        "ratelimit": 500,
+                        "pairs": ["ADA/BTC","ADA/ETH","ADA/USDT","BCH/BTC","BCH/ETH","BCH/USDT"]
+                },
+                "okex": {
+                        "ratelimit": 1000,
+                        "pairs": ["BCH/BTC","BCH/ETH","BCH/USD"]
+                },                
+                "hitbtc2": {
+                        "ratelimit": 1500,
+                        "pairs": ["BCH/BTC", "BCH/ETH"]
+                }
+            },
+            "timestamp": datetime.now().strftime("%d.%m.%Y %H:%M:%S.%f")
+        }
+
+        # calculating common delay
+
         try:
             workers = getActiveWorkers() # get active RabbitMQ connections
             if len(workers) > 0:
                 for worker in workers:
                     channel.basic_publish(exchange="", 
                                 routing_key=worker, 
-                                body="{}, pacemaker version: {}".format(worker, __version__),
+                                body=json.dumps(job), # <<== assigning job to worker
                                 properties=pika.BasicProperties(
                                     delivery_mode=2,
                                     expiration='{}'.format(int(common_delay))
@@ -87,9 +113,10 @@ if __name__ == '__main__':
                             datetime.now(), len(workers), worker))
                     #i += 1
                     sleep(common_delay/len(workers)/1000)
+                    #_ = input("Press ENTER to send next job...") ## - for testing purposes only! ## 
             else:
                 print("Waiting for workers...{0: <35}".format(" "), end="\r", flush=True)
-                sleep(1)
+                sleep(0.5)
 
         except KeyboardInterrupt:
             print("\nLeaving by CTRL-C")
@@ -97,3 +124,5 @@ if __name__ == '__main__':
 
         except Exception as e:
             print(e)
+
+        

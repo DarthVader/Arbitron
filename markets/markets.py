@@ -1,11 +1,22 @@
-import sys
+#!/usr/bin/python3.6
+
+# markets.py
+# High-level class for Markets loading and management
+__version__ = "1.0.1"
+
+import os, sys
 import asyncio
 import ccxt.async as ccxt
 from ccxt.async import Exchange
 
+root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(root)
+#from settings.settings import Settings
+from database.database import Database
+
+
 class Markets:
-    
-    # globals (BAD, I know)
+
     fiat = ['USD','EUR','JPY','UAH','USDT','RUB','CAD','NZDT']
     allowed_tsyms = ['USD', 'USDT', 'BTC', 'ETH', 'DOGE', 'LTC', 'EUR', 'RUB'] # allowed symbols for convertion to
 
@@ -14,7 +25,9 @@ class Markets:
         self.exchanges_list = []    #  exchanges_list - custom list of exchanges to filter (lowercase)
         self.ex_pairs = {}          #  ex_pairs - dict of exchanges which contains corresponding trading pairs
         self.my_tokens = []         #  list of string values representing which token is allowed either on fsym or tsym
-
+        #self.config = Settings()
+        print(f"CCXT version: {ccxt.__version__}")
+        
 
     def _init_metadata(self, exchanges_list):
         self.exchanges_list = exchanges_list
