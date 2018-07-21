@@ -2,7 +2,7 @@
 
 # worker
 # collects historic/orderbook data from exchanges using ccxt library
-__version__ = '1.1.1'
+__version__ = '1.1.3'
 
 import pika
 import os, sys, argparse, time, socket, ipgetter
@@ -20,10 +20,11 @@ from settings import Settings
 from database import Database
 from markets.markets import Markets
 
+
 print(f"Worker: {__version__}")
-cfg = Settings()    # read settings from INI file (singleton)
-db = Database()     # connecting to database (singleton)
-markets = Markets() # Markets library instance (singleton)
+cfg = Settings()      # read settings from INI file (singleton)
+#db = Database()       # connecting to database (singleton)
+#markets = Markets(db) # Markets library instance (singleton)
 
 common_delay = 3000 # stub !!!
 exchange = 'Test exchange'
@@ -36,16 +37,16 @@ def getCurrentTimestamp():
     return int(time.mktime(dt.timetuple())*1000 + dt.microsecond/1000)
 
 
-def getTimestamp(dt):
-    return int(dt.replace(tzinfo=timezone.utc).timestamp()*1000 + dt.microsecond/1000)
-    #return int(time.mktime(d.timetuple())*1e3 + d.microsecond/1e3)
+# def getTimestamp(dt):
+#     return int(dt.replace(tzinfo=timezone.utc).timestamp()*1000 + dt.microsecond/1000)
+#     #return int(time.mktime(d.timetuple())*1e3 + d.microsecond/1e3)
 
 
-def getActiveWorkers():
-    req = "http://{}:{}/api/consumers".format(cfg.rabbit_nodes[0], cfg.rabbit_port)
-    consumers = requests.get(req, auth=HTTPBasicAuth(cfg.rabbit_user, cfg.rabbit_pass)).json()
-    workers = [x['queue']['name'] for x in consumers]
-    return workers
+# def getActiveWorkers():
+#     req = "http://{}:{}/api/consumers".format(cfg.rabbit_nodes[0], cfg.rabbit_port)
+#     consumers = requests.get(req, auth=HTTPBasicAuth(cfg.rabbit_user, cfg.rabbit_pass)).json()
+#     workers = [x['queue']['name'] for x in consumers]
+#     return workers
 
 
 def callback(ch, method, properties, body):
@@ -53,7 +54,6 @@ def callback(ch, method, properties, body):
     try:
         #print("- Received pace signal from {}".format(str(body)))
         #start = getCurrentTimestamp() # starting time
-
         batch = BatchStatement(consistency_level=ConsistencyLevel.LOCAL_QUORUM)
         timestamp = getCurrentTimestamp()
         last_run = timestamp
@@ -61,18 +61,24 @@ def callback(ch, method, properties, body):
         # Parsing body to fetch exchanges, pairs and rate limits
         #body = body.decode() # string values need to be decoded in order to remove leading 'b' symbol
         body = json.loads(body)
-        job = body['exchanges']
+        job = body['job']
+
+        markets.process_job(job, db) # <== pass job to Markets class
+
         pacemaker_version = body['version']
         pacemaker_time = body['timestamp']
-        exchanges = job.keys()
+        # exchanges = job.keys()  
 
-        for exchange in exchanges:
-            pairs = list(job[exchange]["pairs"])
-            ratelimit = job[exchange]["ratelimit"]
-            print(f"{exchange} (rate limit={ratelimit}ms): {pairs}")
-            # Fetch history, orderbook START
-            # ---
-            # Fetch history, orderbook END
+        # delay = 350 # initialize delay with some non-zero value
+        # for exchange in exchanges:
+        #     pairs = list(job[exchange]["pairs"])
+        #     ratelimit = job[exchange]["ratelimit"]
+        #     delay = max(delay, ratelimit) # calculate maximum time
+        #     print(f"\t{exchange} ({ratelimit} ms): {pairs}")
+
+        # Fetch history, orderbook START
+        # ---
+        # Fetch history, orderbook END
 
         # if you see "tuple index out of range" - it means that something is wrong with parameters, quotes or commas in the following cql
         ttl = int(common_delay/1000 * int(cfg.ttl_factor))
@@ -90,12 +96,17 @@ def callback(ch, method, properties, body):
         batch.add(cql) 
         
         #now = getCurrentTimestamp()
-        session.execute(batch, timeout=common_delay)
-        print(f"{datetime.now()}-{Fore.GREEN}{ip}{Fore.RESET}=>{Fore.CYAN}{cfg.workers_table}{Fore.RESET}, " \
-            f"last_run: {last_run}, pacemaker: {pacemaker_version}, pacemaker ts: {pacemaker_time} ".format(Fore=Fore))
-    
+        db.session.execute(batch, timeout=common_delay)
+        print(f"{datetime.now()}, [{Fore.GREEN}{ip}{Fore.RESET}] monitoring: {Fore.CYAN}{cfg.workers_table}{Fore.RESET}, " \
+            f"last_run: {last_run}, pacemaker {pacemaker_version} ts: {pacemaker_time} ".format(Fore=Fore))
+        
+        #channel.basic_ack()
+
+        #print(f"Waiting {delay/1000} seconds...", end="\r", flush=True)
+
     except Exception as e:
         print(f"{Fore.RED}{e}{Fore.RESET}")
+
 
 
 if __name__ == '__main__':
@@ -111,12 +122,11 @@ if __name__ == '__main__':
     ip = "8.8.8.8"
     while ip == "8.8.8.8":   # Ugly workaround to overcome bug in ipgetter!
         ip = ipgetter.myip() # This bug sometimes returns google address 8.8.8.8 instead of the real one
-
     host_name = socket.gethostname()
-
+    print(Fore.GREEN+Style.BRIGHT+f"Worker IP={ip}, host name={host_name})"+Style.RESET_ALL)
 
     ##--------------- Message broker ------------------
-    print("Connecting to pacemaker server...", end='', flush=False)
+    print("Connecting to pacemaker...", end='', flush=False)
     try:
         cred = pika.credentials.PlainCredentials(username=cfg.rabbit_user, password=cfg.rabbit_pass)
         connection = pika.BlockingConnection(pika.ConnectionParameters(cfg.rabbit_nodes[0], credentials=cred))
@@ -130,18 +140,22 @@ if __name__ == '__main__':
     print(Fore.GREEN+Style.BRIGHT+f"{cfg.rabbit_nodes[0]}"+Style.RESET_ALL)
 
     ##--------------- Database ------------------
-    print("Connecting to Cassandra instance from IP={Fore.GREEN}{Style.BRIGHT}{} ({}){Style.RESET_ALL}".format(ip, host_name, Fore=Fore, Style=Style)) #, end="", flush=False)
-    try:
-        cluster = Cluster(contact_points=cfg.cassandra_nodes, port=9042)
-        session = cluster.connect(keyspace='temp')
+    db = Database()
+    db.get_exchanges()    
+    my_exchanges = db.exchanges_list
+    print(Fore.GREEN+Style.BRIGHT+f"{cfg.cassandra_nodes}"+Style.RESET_ALL)
 
-    except Exception as e: #OSError as e:
-        print(Fore.RED+Style.BRIGHT+"{}{Style.RESET_ALL}".format(e.args[0], Style=Style))
-        sys.exit()
+    ##------------------- CCXT ---------------------
+    print("Connecting to exchanges...".format(), end="\n", flush=False)
+    markets = Markets(db)
+    markets.load_exchanges(exchanges_list=my_exchanges)
+    print(Fore.GREEN+Style.BRIGHT+"READY."+Style.RESET_ALL)
+
     
     try:
+        channel.basic_qos(prefetch_count=1)
         channel.basic_consume(callback, queue="{}".format(ip), no_ack=True)
-        print("Waiting for pacemaker signals... To exit press Ctrl+C", end="\r", flush=True)
+        print("Waiting for jobs... To exit press Ctrl+C", end="\r", flush=True)
         channel.start_consuming()
 
     except KeyboardInterrupt:

@@ -32,6 +32,19 @@ class Database():
             self.session = cluster.connect(keyspace=self.config.settings_keyspace)
             self.session.row_factory = self._pandas_factory
             self.session.default_fetch_size = self.config.default_fetch_size
+            cql = f'''CREATE TABLE IF NOT EXISTS 
+                {self.config.data_keyspace}.{self.config.history_table} ( 
+                exchange text,  
+                pair text, 
+                ts timestamp, 
+                id text, 
+                amount double, 
+                price double, 
+                side text,
+                side text, 
+                PRIMARY KEY (( exchange, pair ), ts, id) 
+            ) WITH CLUSTERING ORDER BY ( ts DESC, id ASC )'''
+            _ = self.session.execute(cql, timeout=10)
             print("OK")
         except Exception as e:
             print(Fore.RED+Style.BRIGHT+"{} {Style.RESET_ALL}".format(e.args[0], Fore=Fore, Style=Style))
@@ -95,3 +108,17 @@ class Database():
         except Exception as e:
             print(Fore.RED+Style.BRIGHT+"{} {Style.RESET_ALL}".format(e.args[0], Fore=Fore, Style=Style))
         
+
+    def get_last_access(self, exchange, pair):
+        try:
+            cql = f"""SELECT ts FROM {self.config.data_keyspace}.{self.config.history_table} 
+                      WHERE exchange='{exchange}' and pair='{pair}' LIMIT 1"""
+            res = self.session.execute(cql, timeout=5)
+            return None
+
+        except Exception as e:
+            print(Fore.RED+Style.BRIGHT+"{} {Style.RESET_ALL}".format(e.args[0], Fore=Fore, Style=Style))
+
+
+if __name__ == '__main__':
+    print("This file is not intened for direct execution")

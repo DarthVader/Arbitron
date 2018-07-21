@@ -280,6 +280,7 @@ async def main():
                 tasks.append(asyncio.ensure_future(History(ex_obj, pair, last_fetch)))
     except Exception:
         pass
+        
     finally:
         await asyncio.gather(*tasks)
 

@@ -1,17 +1,19 @@
 #!/usr/bin/python3.6
 
 # markets.py
-# High-level class for Markets loading and management
-__version__ = "1.0.1"
+# High-level class for Markets data loading and management
+__version__ = "1.0.3"
 
 import os, sys
 import asyncio
 import ccxt.async as ccxt
 from ccxt.async import Exchange
+from colorama import init, Fore, Back, Style # color printing
 
 root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(root)
 #from settings.settings import Settings
+from settings.settings import Settings
 from database.database import Database
 
 
@@ -20,13 +22,18 @@ class Markets:
     fiat = ['USD','EUR','JPY','UAH','USDT','RUB','CAD','NZDT']
     allowed_tsyms = ['USD', 'USDT', 'BTC', 'ETH', 'DOGE', 'LTC', 'EUR', 'RUB'] # allowed symbols for convertion to
 
-    def __init__(self):
-        self.exchanges = {}         #  exchanges - dict of ccxt objects
-        self.exchanges_list = []    #  exchanges_list - custom list of exchanges to filter (lowercase)
-        self.ex_pairs = {}          #  ex_pairs - dict of exchanges which contains corresponding trading pairs
-        self.my_tokens = []         #  list of string values representing which token is allowed either on fsym or tsym
-        #self.config = Settings()
-        print(f"CCXT version: {ccxt.__version__}")
+    def __init__(self, db_context):
+        self.exchanges = {}          #  exchanges - dict of ccxt objects
+        self.exchanges_list = []     #  exchanges_list - custom list of exchanges to filter (lowercase)
+        self.ex_pairs = {}           #  ex_pairs - dict of exchanges which contains corresponding trading pairs
+        self.my_tokens = []          #  list of string values representing which token is allowed either on fsym or tsym
+        self.last_fetch = {}         #  init dict with last fetches
+        self.db_context = db_context #  database context
+        self._cache = {}             #  local cache for storing last access times to exchanges and pairs
+        self.config = Settings()
+
+        init(convert=True) # colorama init  
+        print(f"CCXT version: {Fore.GREEN+Style.BRIGHT+ccxt.__version__+Style.RESET_ALL}")
         
 
     def _init_metadata(self, exchanges_list):
@@ -39,8 +46,9 @@ class Markets:
 
 
     def __del__(self):
-        loop = asyncio.get_event_loop()
-        loop.run_until_complete(self._shutdown())
+        if self.exchanges != {}:
+            loop = asyncio.get_event_loop()
+            loop.run_until_complete(self._shutdown())
 
 
     async def _shutdown(self):
@@ -65,7 +73,8 @@ class Markets:
 
     
     def load_exchanges(self, exchanges_list):
-        self._init_metadata(exchanges_list) # init by exchanges list from settings.exchanges table
+        if self.exchanges_list == []:
+            self._init_metadata(exchanges_list) # init by exchanges list from settings.exchanges table
         loop = asyncio.get_event_loop()
         try:
             loop.run_until_complete(self._run_tasks(self.exchanges))
@@ -87,3 +96,114 @@ class Markets:
                         if sym.split('/')[0] in my_tokens and sym.split('/')[1] in my_tokens]
             my_pairs = [x[0]+'/'+x[1] for x in my_pairs]
             self.ex_pairs[ex] = my_pairs
+
+
+    async def _get_history(self, exchange, pair, last_fetch):
+        """ Get historic data for ONE single pair from ONE exchange """
+        try:
+            rateLimit = self.exchanges[exchange].rateLimit
+            ts = self._cache[exchange][pair]
+            if ts == None:
+                histories = await self.exchanges[exchange].fetch_trades(pair, limit=100)
+            else:
+                histories = await self.exchanges[exchange].fetch_trades(pair, since=ts)
+
+            ## SAVING LAST ACCESS TIME TO CACHE...
+            self._cache[exchange][pair] = histories[-1]['timestamp'] + 1
+
+            ## SAVING TO DATABASE...
+            batch_cql = []
+            for x in histories:
+                batch_cql.append(f"INSERT INTO {self.config.data_keyspace}.{self.config.history_table} (exchange, pair, ts, id, price, amount, type, side) VALUES " +
+                f"('{exchange}', '{pair}', {x['timestamp']}, '{x['id']}', {x['price']}, {x['amount']}, '{x['type']}', '{x['side']}')")
+            print(batch_cql)
+            self.db_context.batch_insert(batch_cql)
+
+        except Exception as e:
+            print(f"{Fore.YELLOW}{e}{Fore.RESET}")
+
+        finally:
+            await asyncio.sleep(rateLimit/1000)
+            #sleep(rateLimit/1000)
+
+
+
+    def _fill_last_access_times(self, job):
+        """ fills job structure with last access times from database or from cache """
+        exchanges = job.keys()
+        for exchange in exchanges:
+            if exchange not in self._cache:
+                self._cache[exchange] = {}
+
+            pairs = list(job[exchange]["pairs"])
+            for pair in pairs:
+                if pair not in self._cache[exchange]:
+                    self._cache[exchange][pair] = self.db_context.get_last_access(exchange, pair)
+                
+
+
+    def process_job(self, job, db_context):
+        """
+        Method collects historic and orderbook data from exchanges 
+        and saves it to database given by context parameter db_context
+
+         - job parameter must contain json dictionary with the follownig structure:
+         - returns large chunk of collected data by each requested pair
+        
+        # input (job structure): 
+        {
+            "exchange1_id": {
+                "ratelimit": 3000,
+                "pairs": ["BTC/USD", "BTC/ETH", "ETH/USD"],
+            }
+            "exchange2_id": {
+                "ratelimit": 2000,
+                "pairs": ["BTC/OMG", "BTC/ETH"],
+            },...
+        }
+
+        # output json object:
+        {
+            "exchange1_id": {
+                "BTC/USD": {
+                    "history": [[1234567, 12.34], [1234568, 12.33], [1234569, 12.32],...],
+                    "orderbook": {                        
+                        "bids": [1,2,3,4,...],
+                        "asks": [2,3,4,5,...],
+                    }
+                },...
+            },...
+        }
+        """
+        try:
+            if self.exchanges_list == {}:
+                raise ValueError("Markets instance is not properly initialized! load_exchanges() must be called first!")
+            
+            self._fill_last_access_times(job)
+
+            #db_context.get_exchanges()
+            #df = db_context.df_exchanges
+            #print(df.name.tolist())
+            exchanges = job.keys()
+            
+            #delay = 350 # initialize delay with some non-zero value
+            
+            loop = asyncio.get_event_loop()
+
+            for exchange in exchanges:
+                pairs = list(job[exchange]["pairs"])
+                for pair in pairs:
+                    loop.run_until_complete(self._get_history(exchange, pair, None))
+
+                    #self._get_history(exchange, pair, None)
+                #ratelimit = job[exchange]["ratelimit"]
+                #delay = max(delay, ratelimit) # calculate maximum time
+                #print(f"\t{exchange} ({ratelimit} ms): {pairs}")
+
+        except Exception as e:
+            init(convert=True) # colorama init  
+            print(f"{Fore.RED}{e}{Fore.RESET}")
+        
+
+if __name__ == '__main__':
+    print("This file is not intened for direct execution")

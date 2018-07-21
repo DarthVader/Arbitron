@@ -2,7 +2,7 @@
 
 # pacemaker
 # dispatching server
-__version__ = '1.1.4'
+__version__ = '1.1.5'
 
 import pika # RabbitMQ library
 from cassandra.cluster import Cluster, BatchStatement, ConsistencyLevel
@@ -30,9 +30,15 @@ def getCurrentTimestamp():
 
 
 def getActiveWorkers():
-    req = "http://{}:{}/api/consumers".format(cfg.rabbit_nodes[0], cfg.rabbit_port)
-    consumers = requests.get(req, auth=HTTPBasicAuth(cfg.rabbit_user, cfg.rabbit_pass)).json()
-    workers = [x['queue']['name'] for x in consumers]
+    # Requests RabbitMQ server for active consumers
+    # This block sometimes raises an exception when called too frequently
+    try:
+        req = "http://{}:{}/api/consumers".format(cfg.rabbit_nodes[0], cfg.rabbit_port)
+        consumers = requests.get(req, auth=HTTPBasicAuth(cfg.rabbit_user, cfg.rabbit_pass)).json()
+        workers = [x['queue']['name'] for x in consumers]
+    except Exception as e:
+        print(f"Failure in getActiveWorkers():\n{Fore.RED}{e}{Fore.RESET}")
+        workers = 0
     return workers
 
 
@@ -64,17 +70,15 @@ if __name__ == '__main__':
 
     ##------------------- CCXT ---------------------
     print("Connecting to exchanges...".format(), end="\n", flush=False)
-    markets = Markets()
+    markets = Markets(db)
     markets.load_exchanges(exchanges_list=my_exchanges)
     print(Fore.GREEN+Style.BRIGHT+"READY."+Style.RESET_ALL)
     
     # Code for dispatching jobs to workers. (round-robin)
     while True:
-        # There should be a code for creating and scheduling jobs for workers
-        # Job must contains list of exchanges and pairs that should be queried and saved to database
+        # creating and scheduling jobs for workers
         job = { 
-            "version": f"{__version__}",
-            "exchanges": {
+            "job": {
                 "yobit": {
                         "ratelimit": 3000,
                         "pairs": ["BCH/BTC"]
@@ -92,31 +96,36 @@ if __name__ == '__main__':
                         "pairs": ["BCH/BTC", "BCH/ETH"]
                 }
             },
-            "timestamp": datetime.now().strftime("%d.%m.%Y %H:%M:%S.%f")
+            "timestamp": datetime.now().strftime("%d.%m.%Y %H:%M:%S.%f"),
+            "version": f"{__version__}"
         }
 
         # calculating common delay
+        # common_delay = ...
+        pass
 
         try:
             workers = getActiveWorkers() # get active RabbitMQ connections
             if len(workers) > 0:
                 for worker in workers:
                     channel.basic_publish(exchange="", 
-                                routing_key=worker, 
-                                body=json.dumps(job), # <<== assigning job to worker
-                                properties=pika.BasicProperties(
+                                    routing_key=worker, 
+                                    body=json.dumps(job), # <<== assigning job to worker
+                                    properties=pika.BasicProperties(
                                     delivery_mode=2,
                                     expiration='{}'.format(int(common_delay))
                                 )
                             )
-                    print("{} - Active workers: {}. Pace signal has been sent to worker {}".format(
+                    print("{} - Active workers: {}. Job sent to {}".format(
                             datetime.now(), len(workers), worker))
-                    #i += 1
-                    sleep(common_delay/len(workers)/1000)
+
+                    delay = common_delay/len(workers)/1000
+                    connection.sleep(delay)
                     #_ = input("Press ENTER to send next job...") ## - for testing purposes only! ## 
             else:
                 print("Waiting for workers...{0: <35}".format(" "), end="\r", flush=True)
-                sleep(0.5)
+                connection.sleep(1)
+                sleep(1)
 
         except KeyboardInterrupt:
             print("\nLeaving by CTRL-C")

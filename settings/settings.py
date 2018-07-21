@@ -26,6 +26,7 @@ class Settings():
 
         # logic
         self.data_keyspace = self.config['logic']['data_keyspace']
+        self.history_table = self.config['logic']['history_table']
         self.settings_keyspace = self.config['logic']['settings_keyspace']
         self.workers_table = self.config['logic']['workers']
         self.tokens_table = self.config['logic']['tokens']
@@ -33,3 +34,6 @@ class Settings():
         self.exchanges_table = self.config['logic']['exchanges']
         self.log_table = self.config['logic']['log']
         self.ttl_factor = self.config['logic']['ttl_factor']
+
+if __name__ == '__main__':
+    print("This file is not intened for direct execution")
