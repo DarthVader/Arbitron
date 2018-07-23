@@ -2,10 +2,11 @@
 
 # markets.py
 # High-level class for Markets data loading and management
-__version__ = "1.0.3"
+__version__ = "1.0.4"
 
 import os, sys
 import asyncio
+import ccxt as ccxt_s
 import ccxt.async as ccxt
 from ccxt.async import Exchange
 from colorama import init, Fore, Back, Style # color printing
@@ -98,35 +99,70 @@ class Markets:
             self.ex_pairs[ex] = my_pairs
 
 
-    async def _get_history(self, exchange, pair, last_fetch):
-        """ Get historic data for ONE single pair from ONE exchange """
+    def fetch_trades(self, exchange, pair, limit=100):
+        ex_obj = getattr(ccxt_s, exchange)
+        ex = ex_obj()
+        ex.load_markets()
+        ex.enableRateLimit = True,
+        histories = None
         try:
-            rateLimit = self.exchanges[exchange].rateLimit
-            ts = self._cache[exchange][pair]
-            if ts == None:
-                histories = await self.exchanges[exchange].fetch_trades(pair, limit=100)
+            if limit==None:
+                histories = ex.fetch_trades(symbol=pair)
             else:
-                histories = await self.exchanges[exchange].fetch_trades(pair, since=ts)
+                histories = ex.fetch_trades(symbol=pair, limit=100)
+        except Exception as e:
+            print(f"Error in {__file__}.fetch_trades(). {Fore.YELLOW}{e}{Fore.RESET}")
 
-            ## SAVING LAST ACCESS TIME TO CACHE...
-            self._cache[exchange][pair] = histories[-1]['timestamp'] + 1
+        return histories
 
-            ## SAVING TO DATABASE...
-            batch_cql = []
-            for x in histories:
-                batch_cql.append(f"INSERT INTO {self.config.data_keyspace}.{self.config.history_table} (exchange, pair, ts, id, price, amount, type, side) VALUES " +
-                f"('{exchange}', '{pair}', {x['timestamp']}, '{x['id']}', {x['price']}, {x['amount']}, '{x['type']}', '{x['side']}')")
-            print(batch_cql)
-            self.db_context.batch_insert(batch_cql)
+
+    async def _get_history(self, exchange, pairs):
+        """ Get historic data for ONE single pair from ONE exchange """
+        for pair in pairs:
+            try:
+                print(f"\tfetching {Fore.YELLOW}{exchange}{Style.RESET_ALL}: {Fore.GREEN}{pair}{Style.RESET_ALL}")
+                #rateLimit = self.exchanges[exchange].rateLimit
+                since = self._cache[exchange][pair]
+
+                if since == None:
+                    histories = await self.exchanges[exchange].fetch_trades(pair, limit=50)
+                else:
+                    histories = await self.exchanges[exchange].fetch_trades(pair, since=since)
+
+                ## SAVING LAST ACCESS TIME TO CACHE...
+                if histories != []:
+                    self._cache[exchange][pair] = histories[-1]['timestamp'] + 1
+                    ##  SAVING TO DATABASE...
+                    batch_cql = []
+                    for x in histories:
+                        batch_cql.append(f"INSERT INTO {self.config.data_keyspace}.{self.config.history_table} (exchange, pair, ts, id, price, amount, type, side) VALUES " +
+                        f"('{exchange}', '{pair}', {x['timestamp']}, '{x['id']}', {x['price']}, {x['amount']}, '{x['type']}', '{x['side']}')")
+                        #print(batch_cql)
+                    self.db_context.batch_insert(batch_cql)
+
+            except Exception as e:
+                print(f"Error in {__file__}._get_history(). {Fore.YELLOW}{e}{Fore.RESET}")
+
+            finally:
+                await asyncio.sleep(self.exchanges[exchange].rateLimit/1000)
+                    #sleep(rateLimit/1000)
+
+    
+    async def _get_histories(self, job):
+        """ fetches history via parallel fibers """
+        try:
+            exchanges = job.keys()
+            tasks = []
+            for exchange in exchanges:
+                pairs = list(job[exchange]["pairs"])
+                tasks.append(asyncio.ensure_future(self._get_history(exchange, pairs)))
 
         except Exception as e:
-            print(f"{Fore.YELLOW}{e}{Fore.RESET}")
-
+            print(f"Error in {__file__}._get_histories(). {Fore.YELLOW}{e}{Fore.RESET}")
+                
         finally:
-            await asyncio.sleep(rateLimit/1000)
-            #sleep(rateLimit/1000)
-
-
+            await asyncio.gather(*tasks)
+            
 
     def _fill_last_access_times(self, job):
         """ fills job structure with last access times from database or from cache """
@@ -152,7 +188,7 @@ class Markets:
         
         # input (job structure): 
         {
-            "exchange1_id": {
+            "exchange1": {
                 "ratelimit": 3000,
                 "pairs": ["BTC/USD", "BTC/ETH", "ETH/USD"],
             }
@@ -164,7 +200,7 @@ class Markets:
 
         # output json object:
         {
-            "exchange1_id": {
+            "exchange1": {
                 "BTC/USD": {
                     "history": [[1234567, 12.34], [1234568, 12.33], [1234569, 12.32],...],
                     "orderbook": {                        
@@ -179,22 +215,24 @@ class Markets:
             if self.exchanges_list == {}:
                 raise ValueError("Markets instance is not properly initialized! load_exchanges() must be called first!")
             
-            self._fill_last_access_times(job)
+            self._fill_last_access_times(job) ## <-- commented!
 
             #db_context.get_exchanges()
             #df = db_context.df_exchanges
             #print(df.name.tolist())
-            exchanges = job.keys()
+            #exchanges = job.keys()
             
             #delay = 350 # initialize delay with some non-zero value
             
             loop = asyncio.get_event_loop()
-
-            for exchange in exchanges:
-                pairs = list(job[exchange]["pairs"])
-                for pair in pairs:
-                    loop.run_until_complete(self._get_history(exchange, pair, None))
-
+            loop.run_until_complete(self._get_histories(job))
+            
+            #for exchange in exchanges:
+            #    pairs = list(job[exchange]["pairs"])
+            #    loop.run_until_complete(self._get_history(exchange, pairs))
+                #asyncio.ensure_future(self._get_history(exchange, pairs))
+                #for pair in pairs:
+                #    loop.run_until_complete(self._get_history(exchange, pair))
                     #self._get_history(exchange, pair, None)
                 #ratelimit = job[exchange]["ratelimit"]
                 #delay = max(delay, ratelimit) # calculate maximum time

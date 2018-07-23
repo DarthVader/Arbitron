@@ -61,39 +61,26 @@ def callback(ch, method, properties, body):
         # Parsing body to fetch exchanges, pairs and rate limits
         #body = body.decode() # string values need to be decoded in order to remove leading 'b' symbol
         body = json.loads(body)
-        job = body['job']
 
-        markets.process_job(job, db) # <== pass job to Markets class
-
-        pacemaker_version = body['version']
-        pacemaker_time = body['timestamp']
-        # exchanges = job.keys()  
-
-        # delay = 350 # initialize delay with some non-zero value
-        # for exchange in exchanges:
-        #     pairs = list(job[exchange]["pairs"])
-        #     ratelimit = job[exchange]["ratelimit"]
-        #     delay = max(delay, ratelimit) # calculate maximum time
-        #     print(f"\t{exchange} ({ratelimit} ms): {pairs}")
+        job                 = body['job']
+        pacemaker_version   = body['version']
+        pacemaker_time      = body['timestamp']
 
         # Fetch history, orderbook START
-        # ---
+        markets.process_job(job, db) # <== pass job to Markets class which fetches history and orderbook then saves them to database
         # Fetch history, orderbook END
 
         # if you see "tuple index out of range" - it means that something is wrong with parameters, quotes or commas in the following cql
         ttl = int(common_delay/1000 * int(cfg.ttl_factor))
         cql = f"INSERT INTO {cfg.workers_table} (exchange, ip, last_run, common_delay, worker_name, worker_version) " \
             f"VALUES('{exchange}', '{ip}', {last_run}, {common_delay}, '{worker_name}', '{__version__}') USING TTL {ttl}"                
-        #session.execute(cql, timeout=5)
         batch.add(cql)
 
         # insert to log
-        message = "{}".format(host_name)
-        cql = f"INSERT INTO {cfg.log_table} (id, ip, last_run, worker_version, message) " \
-            f"VALUES(now(), '{ip}', {timestamp}, '{__version__}', '{message}')"
+        # message = "{}".format(host_name)
+        cql = f"INSERT INTO {cfg.log_table} (id, ip, pacemaker, worker) VALUES(now(), '{ip}', '{pacemaker_version}', '{__version__}')"
         
-        #session.execute(cql, timeout=5)
-        batch.add(cql) 
+        batch.add(cql)
         
         #now = getCurrentTimestamp()
         db.session.execute(batch, timeout=common_delay)
@@ -101,11 +88,10 @@ def callback(ch, method, properties, body):
             f"last_run: {last_run}, pacemaker {pacemaker_version} ts: {pacemaker_time} ".format(Fore=Fore))
         
         #channel.basic_ack()
-
         #print(f"Waiting {delay/1000} seconds...", end="\r", flush=True)
 
     except Exception as e:
-        print(f"{Fore.RED}{e}{Fore.RESET}")
+        print(f"Error in {__file__}.callback(). {Fore.RED}{e}{Fore.RESET}")
 
 
 

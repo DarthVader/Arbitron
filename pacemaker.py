@@ -2,12 +2,13 @@
 
 # pacemaker
 # dispatching server
-__version__ = '1.1.5'
+__version__ = '1.1.6'
 
 import pika # RabbitMQ library
 from cassandra.cluster import Cluster, BatchStatement, ConsistencyLevel
 import sys, os
 import time
+import numpy as np
 from time import sleep
 from datetime import datetime, timezone, timedelta
 from colorama import init, Fore, Back, Style # color printing
@@ -18,6 +19,8 @@ from pprint import pprint
 from markets.markets import Markets
 from settings import Settings
 from database import Database
+from collections import deque
+
 
 cfg = Settings() # read settings from INI file
 common_delay = 3000 ## stub !!!
@@ -74,9 +77,20 @@ if __name__ == '__main__':
     markets.load_exchanges(exchanges_list=my_exchanges)
     print(Fore.GREEN+Style.BRIGHT+"READY."+Style.RESET_ALL)
     
+    # preparing dispatcher:
+    # inserting to dataframe number of cycles for pair reload needed to be run during single job processing
+    db.df_exchanges['cycles'] = np.floor(db.df_exchanges.ratelimit.max() / db.df_exchanges.ratelimit)
+    # dict of cycles
+    cycles = db.df_exchanges.set_index('id')[['cycles']].to_dict()['cycles']
+    ratelimits = db.df_exchanges.set_index('id')[['ratelimit']].to_dict()['ratelimit']
+    # pairs structure
+    pairs = pd.pivot_table(db.df_pairs[['exchange', 'pair']], index=['exchange'], aggfunc=deque).to_dict()['pair']
+
+
     # Code for dispatching jobs to workers. (round-robin)
     while True:
         # creating and scheduling jobs for workers
+        '''
         job = { 
             "job": {
                 "yobit": {
@@ -99,14 +113,28 @@ if __name__ == '__main__':
             "timestamp": datetime.now().strftime("%d.%m.%Y %H:%M:%S.%f"),
             "version": f"{__version__}"
         }
-
-        # calculating common delay
-        # common_delay = ...
-        pass
+        '''
 
         try:
             workers = getActiveWorkers() # get active RabbitMQ connections
             if len(workers) > 0:
+                job = {
+                    "job": {},
+                    "timestamp": datetime.now().strftime("%d.%m.%Y %H:%M:%S.%f"),
+                    "version": f"{__version__}"
+                }
+                common_delay = 0
+                print("==========\n JOB\n==========")
+                for ex in db.df_exchanges.id.values:
+                    cycle = int(cycles[ex])
+                    ratelimit = ratelimits[ex]
+                    job["job"][ex] = {"pairs": [], "ratelimit": ratelimit }
+                    job["job"][ex]["pairs"] = list(pairs[ex])[:cycle]
+                    print(f"{ex}: {job}")
+                    pairs[ex].rotate(-cycle)
+                    # calculating common delay:
+                    common_delay = ratelimit if ratelimit>common_delay else common_delay
+
                 for worker in workers:
                     channel.basic_publish(exchange="", 
                                     routing_key=worker, 
@@ -125,13 +153,13 @@ if __name__ == '__main__':
             else:
                 print("Waiting for workers...{0: <35}".format(" "), end="\r", flush=True)
                 connection.sleep(1)
-                sleep(1)
+                #sleep(1)
 
         except KeyboardInterrupt:
             print("\nLeaving by CTRL-C")
             sys.exit()
 
         except Exception as e:
-            print(e)
+            print(f"Error in {__file__}.main(): {e}")
 
         

@@ -1,10 +1,10 @@
 #!/usr/bin/python3.6
 
 # Arbitron project database driver
-__version__ = '1.0.1'
+__version__ = '1.0.2'
 
 from cassandra.cluster import Cluster, BatchStatement, ConsistencyLevel
-import sys, os
+import sys, os, hashlib
 import time
 from datetime import datetime, timezone, timedelta
 from colorama import init, Fore, Back, Style # color printing
@@ -19,7 +19,8 @@ class Database():
     
     def _pandas_factory(self, colnames, rows):
         return pd.DataFrame(rows, columns=colnames)
-        
+
+
     def __init__(self):
         init(convert=True) # colorama init 
         self.ex_pairs = {} # special hierarchical structure which will contain exchanges and their pairs
@@ -41,13 +42,25 @@ class Database():
                 amount double, 
                 price double, 
                 side text,
-                side text, 
+                type text, 
                 PRIMARY KEY (( exchange, pair ), ts, id) 
             ) WITH CLUSTERING ORDER BY ( ts DESC, id ASC )'''
             _ = self.session.execute(cql, timeout=10)
             print("OK")
         except Exception as e:
             print(Fore.RED+Style.BRIGHT+"{} {Style.RESET_ALL}".format(e.args[0], Fore=Fore, Style=Style))
+
+
+    def MD5(self, input):
+        m = hashlib.md5()
+        m.update(input.encode('utf-8'))
+        return m.hexdigest()
+
+
+    def SHA1(self, input):
+        m = hashlib.sha1()
+        m.update(input.encode('utf-8'))
+        return m.hexdigest()
 
 
     def get_exchanges(self):
@@ -59,7 +72,7 @@ class Database():
             self.exchanges_list = self.df_exchanges.id.tolist()
 
         except Exception as e:
-            print(Fore.RED+Style.BRIGHT+"{} {Style.RESET_ALL}".format(e.args[0], Fore=Fore, Style=Style))
+            print(Fore.RED+Style.BRIGHT+"Error in {__file__}.get_exchanges(). {} {Style.RESET_ALL}".format(e.args[0], Fore=Fore, Style=Style))
 
     def get_tokens(self):
         # tokens
@@ -98,7 +111,7 @@ class Database():
             self.session.execute(batch, timeout=30)
 
         except Exception as e:
-            print(Fore.RED+Style.BRIGHT+"{} {Style.RESET_ALL}".format(e.args[0], Fore=Fore, Style=Style))
+            print(Fore.RED+Style.BRIGHT+"Error in {__file__}.batch_insert(). {} {Style.RESET_ALL}".format(e.args[0], Fore=Fore, Style=Style))
 
 
     def __del__(self):
