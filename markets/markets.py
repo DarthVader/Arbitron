@@ -2,7 +2,7 @@
 
 # markets.py
 # High-level class for Markets data loading and management
-__version__ = "1.0.4"
+__version__ = "1.0.5"
 
 import os, sys
 import asyncio
@@ -99,6 +99,20 @@ class Markets:
             self.ex_pairs[ex] = my_pairs
 
 
+
+    def _fill_last_access_times(self, job):
+        """ fills job structure with last access times from database or from cache """
+        exchanges = job.keys()
+        for exchange in exchanges:
+            if exchange not in self._cache:
+                self._cache[exchange] = {}
+
+            pairs = list(job[exchange]["pairs"])
+            for pair in pairs:
+                if pair not in self._cache[exchange]:
+                    self._cache[exchange][pair] = self.db_context.get_last_access(exchange, pair)
+                
+
     def fetch_trades(self, exchange, pair, limit=100):
         ex_obj = getattr(ccxt_s, exchange)
         ex = ex_obj()
@@ -120,7 +134,7 @@ class Markets:
         """ Get historic data for ONE single pair from ONE exchange """
         for pair in pairs:
             try:
-                print(f"\tfetching {Fore.YELLOW}{exchange}{Style.RESET_ALL}: {Fore.GREEN}{pair}{Style.RESET_ALL}")
+                #print(f"\tfetching {Fore.YELLOW}{exchange}{Style.RESET_ALL}: {Fore.GREEN}{pair}{Style.RESET_ALL} ", end="")
                 #rateLimit = self.exchanges[exchange].rateLimit
                 since = self._cache[exchange][pair]
 
@@ -128,6 +142,8 @@ class Markets:
                     histories = await self.exchanges[exchange].fetch_trades(pair, limit=50)
                 else:
                     histories = await self.exchanges[exchange].fetch_trades(pair, since=since)
+
+                print(f"\t{Fore.YELLOW}{exchange}{Style.RESET_ALL}: {Fore.BLUE}{pair}{Style.RESET_ALL} {Fore.WHITE}({len(histories)} rows){Style.RESET_ALL}")
 
                 ## SAVING LAST ACCESS TIME TO CACHE...
                 if histories != []:
@@ -162,20 +178,6 @@ class Markets:
                 
         finally:
             await asyncio.gather(*tasks)
-            
-
-    def _fill_last_access_times(self, job):
-        """ fills job structure with last access times from database or from cache """
-        exchanges = job.keys()
-        for exchange in exchanges:
-            if exchange not in self._cache:
-                self._cache[exchange] = {}
-
-            pairs = list(job[exchange]["pairs"])
-            for pair in pairs:
-                if pair not in self._cache[exchange]:
-                    self._cache[exchange][pair] = self.db_context.get_last_access(exchange, pair)
-                
 
 
     def process_job(self, job, db_context):
@@ -215,7 +217,7 @@ class Markets:
             if self.exchanges_list == {}:
                 raise ValueError("Markets instance is not properly initialized! load_exchanges() must be called first!")
             
-            self._fill_last_access_times(job) ## <-- commented!
+            self._fill_last_access_times(job) ## <-- !
 
             #db_context.get_exchanges()
             #df = db_context.df_exchanges
@@ -226,7 +228,7 @@ class Markets:
             
             loop = asyncio.get_event_loop()
             loop.run_until_complete(self._get_histories(job))
-            
+
             #for exchange in exchanges:
             #    pairs = list(job[exchange]["pairs"])
             #    loop.run_until_complete(self._get_history(exchange, pairs))

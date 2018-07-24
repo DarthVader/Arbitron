@@ -2,7 +2,7 @@
 
 # worker
 # collects historic/orderbook data from exchanges using ccxt library
-__version__ = '1.1.3'
+__version__ = '1.1.4'
 
 import pika
 import os, sys, argparse, time, socket, ipgetter
@@ -26,8 +26,8 @@ cfg = Settings()      # read settings from INI file (singleton)
 #db = Database()       # connecting to database (singleton)
 #markets = Markets(db) # Markets library instance (singleton)
 
-common_delay = 3000 # stub !!!
-exchange = 'Test exchange'
+common_delay = 3000   # stub !!!
+exchange = 'RabbitMQ' # stub !!!
 date_formatter = "%Y-%m-%d %H:%M:%S.%f"
 
 
@@ -78,7 +78,16 @@ def callback(ch, method, properties, body):
 
         # insert to log
         # message = "{}".format(host_name)
-        cql = f"INSERT INTO {cfg.log_table} (id, ip, pacemaker, worker) VALUES(now(), '{ip}', '{pacemaker_version}', '{__version__}')"
+        message = ""
+        for ex in job.keys():
+            message += f"{ex}: ["
+            for pair in job[ex]['pairs']:
+                message += f"{pair},"
+            message += "]\n"
+
+
+        cql = f"INSERT INTO {cfg.log_table} (id, ip, job, pacemaker, worker) VALUES(now(), \
+            '{ip}', '{message}', '{pacemaker_version}', '{__version__}')"
         
         batch.add(cql)
         

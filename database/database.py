@@ -47,8 +47,9 @@ class Database():
             ) WITH CLUSTERING ORDER BY ( ts DESC, id ASC )'''
             _ = self.session.execute(cql, timeout=10)
             print("OK")
+
         except Exception as e:
-            print(Fore.RED+Style.BRIGHT+"{} {Style.RESET_ALL}".format(e.args[0], Fore=Fore, Style=Style))
+            print(Fore.RED+Style.BRIGHT+"{} {Style.RESET_ALL}".format(e, Fore=Fore, Style=Style))
 
 
     def MD5(self, input):

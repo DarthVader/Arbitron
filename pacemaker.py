@@ -124,13 +124,13 @@ if __name__ == '__main__':
                     "version": f"{__version__}"
                 }
                 common_delay = 0
-                print("==========\n JOB\n==========")
+                #print("==========\n JOB\n==========")
                 for ex in db.df_exchanges.id.values:
                     cycle = int(cycles[ex])
                     ratelimit = ratelimits[ex]
                     job["job"][ex] = {"pairs": [], "ratelimit": ratelimit }
                     job["job"][ex]["pairs"] = list(pairs[ex])[:cycle]
-                    print(f"{ex}: {job}")
+                    #print(f"{ex}: {job}")
                     pairs[ex].rotate(-cycle)
                     # calculating common delay:
                     common_delay = ratelimit if ratelimit>common_delay else common_delay
