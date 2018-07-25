@@ -5,27 +5,29 @@ import sys
 from time import sleep
 
 if __name__ == '__main__':
-    cred = pika.credentials.PlainCredentials(username="mike", password="cawa")
+    cred = pika.credentials.PlainCredentials(username="rabbit", password="rabbit")
     connection = pika.BlockingConnection(
             pika.ConnectionParameters('10.7.0.11', credentials=cred))
     
     channel = connection.channel()
+    #channel.exchange_declare(exchange="topic_logs", exchange_type="topic")
     channel.queue_declare(queue="test", durable=False)
 
     # round-robin message send
     msg = "fizz"
-    for i in range(1, 1000):
+    for i in range(1, 100):
         try:
             
             channel.basic_publish(exchange="", 
                         routing_key=msg, 
                         body="{} - {}".format(msg, i),
                         properties=pika.BasicProperties(
-                            delivery_mode=2,
-                            expiration='333'
+                            delivery_mode=1,
+                            expiration='1000'
                         )
                     )
-            print(" [x] Test message {} has been sent".format(i))
+            print(f" [x] Test message [{msg}] #{i} has been sent")
+
             # iterate through fizz-buzz-bang
             if msg=="fizz":
                 msg = "buzz"
@@ -33,7 +35,8 @@ if __name__ == '__main__':
                 msg = "bang"
             else:
                 msg = "fizz"
-            sleep(0.33)
+            
+            sleep(1)
 
         except KeyboardInterrupt:
             print("\nLeaving by CTRL-C")

@@ -2,7 +2,7 @@
 
 # worker
 # collects historic/orderbook data from exchanges using ccxt library
-__version__ = '1.1.4'
+__version__ = '1.1.5'
 
 import pika
 import os, sys, argparse, time, socket, ipgetter

@@ -2,7 +2,7 @@
 
 # pacemaker
 # dispatching server
-__version__ = '1.1.6'
+__version__ = '1.1.8'
 
 import pika # RabbitMQ library
 from cassandra.cluster import Cluster, BatchStatement, ConsistencyLevel
@@ -126,7 +126,7 @@ if __name__ == '__main__':
                 common_delay = 0
                 #print("==========\n JOB\n==========")
                 for ex in db.df_exchanges.id.values:
-                    cycle = int(cycles[ex])
+                    cycle = 1 #int(cycles[ex]) # --<<<======
                     ratelimit = ratelimits[ex]
                     job["job"][ex] = {"pairs": [], "ratelimit": ratelimit }
                     job["job"][ex]["pairs"] = list(pairs[ex])[:cycle]
@@ -140,7 +140,7 @@ if __name__ == '__main__':
                                     routing_key=worker, 
                                     body=json.dumps(job), # <<== assigning job to worker
                                     properties=pika.BasicProperties(
-                                    delivery_mode=2,
+                                    delivery_mode=1,  # 1 - fire and forget, 2 - persistent
                                     expiration='{}'.format(int(common_delay))
                                 )
                             )

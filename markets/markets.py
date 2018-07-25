@@ -2,20 +2,30 @@
 
 # markets.py
 # High-level class for Markets data loading and management
-__version__ = "1.0.5"
+__version__ = "1.0.7"
 
-import os, sys
+import os, sys, time
 import asyncio
 import ccxt as ccxt_s
 import ccxt.async as ccxt
 from ccxt.async import Exchange
 from colorama import init, Fore, Back, Style # color printing
+from datetime import datetime
 
 root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(root)
 #from settings.settings import Settings
 from settings.settings import Settings
 from database.database import Database
+
+
+class Timer:
+    def __init__(self):
+        self.start = time.time()
+
+    def tic(self):
+        return "%2.2f" % (time.time() - self.start)
+
 
 
 class Markets:
@@ -70,7 +80,8 @@ class Markets:
         tasks = []
         for ex in exchanges.items():
             tasks.append(asyncio.ensure_future(self._load_exchange(ex[1])))
-        await asyncio.gather(*tasks)
+        #await asyncio.gather(*tasks)
+        await asyncio.wait(tasks)
 
     
     def load_exchanges(self, exchanges_list):
@@ -114,6 +125,7 @@ class Markets:
                 
 
     def fetch_trades(self, exchange, pair, limit=100):
+        """ Get last trades for given exchange and pair. SYNCHRONOUS version! """
         ex_obj = getattr(ccxt_s, exchange)
         ex = ex_obj()
         ex.load_markets()
@@ -134,33 +146,39 @@ class Markets:
         """ Get historic data for ONE single pair from ONE exchange """
         for pair in pairs:
             try:
-                #print(f"\tfetching {Fore.YELLOW}{exchange}{Style.RESET_ALL}: {Fore.GREEN}{pair}{Style.RESET_ALL} ", end="")
+                print(f"\t{Style.DIM}{datetime.now()} Requested {Fore.YELLOW}{exchange}{Style.RESET_ALL}: {Fore.BLUE}{pair}{Style.RESET_ALL}")
+                timer = Timer()
                 #rateLimit = self.exchanges[exchange].rateLimit
                 since = self._cache[exchange][pair]
 
                 if since == None:
-                    histories = await self.exchanges[exchange].fetch_trades(pair, limit=50)
+                    histories = await self.exchanges[exchange].fetch_trades(pair, limit=100)
                 else:
                     histories = await self.exchanges[exchange].fetch_trades(pair, since=since)
 
-                print(f"\t{Fore.YELLOW}{exchange}{Style.RESET_ALL}: {Fore.BLUE}{pair}{Style.RESET_ALL} {Fore.WHITE}({len(histories)} rows){Style.RESET_ALL}")
+                #print(f"\t{Style.DIM}{datetime.now()} Received {Fore.YELLOW}{exchange}: {Fore.BLUE}{pair} {Fore.WHITE}({len(histories)} rows, {timer.tic()} seconds){Style.RESET_ALL}")
 
-                ## SAVING LAST ACCESS TIME TO CACHE...
+                timer = Timer()
                 if histories != []:
+                    ## SAVING LAST ACCESS TIME TO CACHE...
                     self._cache[exchange][pair] = histories[-1]['timestamp'] + 1
-                    ##  SAVING TO DATABASE...
+                    
+                    ##  SAVING history TO DATABASE...
                     batch_cql = []
                     for x in histories:
                         batch_cql.append(f"INSERT INTO {self.config.data_keyspace}.{self.config.history_table} (exchange, pair, ts, id, price, amount, type, side) VALUES " +
                         f"('{exchange}', '{pair}', {x['timestamp']}, '{x['id']}', {x['price']}, {x['amount']}, '{x['type']}', '{x['side']}')")
                         #print(batch_cql)
                     self.db_context.batch_insert(batch_cql)
+                
+                #print(f"\t{Style.DIM}{datetime.now()} Saved {exchange}: {pair} ({len(histories)} rows, {timer.tic()} seconds){Style.RESET_ALL}")
+                print(f"\t{Style.DIM}{datetime.now()} Received and Saved {Fore.YELLOW}{exchange}: {Fore.BLUE}{pair} {Fore.WHITE}({len(histories)} rows, {timer.tic()} seconds){Style.RESET_ALL}")
 
             except Exception as e:
                 print(f"Error in {__file__}._get_history(). {Fore.YELLOW}{e}{Fore.RESET}")
 
-            finally:
-                await asyncio.sleep(self.exchanges[exchange].rateLimit/1000)
+            #finally:
+            #    await asyncio.sleep(self.exchanges[exchange].rateLimit/1000)
                     #sleep(rateLimit/1000)
 
     
