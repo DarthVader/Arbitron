@@ -2,7 +2,7 @@
 
 # pacemaker
 # dispatching server
-__version__ = '1.1.8'
+__version__ = '1.1.9'
 
 import pika # RabbitMQ library
 from cassandra.cluster import Cluster, BatchStatement, ConsistencyLevel

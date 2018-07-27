@@ -2,13 +2,13 @@
 
 # markets.py
 # High-level class for Markets data loading and management
-__version__ = "1.0.9"
+__version__ = "1.1.0"
 
 import os, sys, time
 import asyncio
 import ccxt as ccxt_s
-import ccxt.async as ccxt
-from ccxt.async import Exchange
+import ccxt.async_support as ccxt
+from ccxt.async_support import Exchange
 from colorama import init, Fore, Back, Style # color printing
 from datetime import datetime
 import logging
