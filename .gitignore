@@ -7,3 +7,5 @@ __pycache__
 *.zip
 thumbs.db
 *.bak
+*.log
+*.cache

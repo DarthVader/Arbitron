@@ -21,7 +21,8 @@ if __name__ == '__main__':
         # queue_name = result.method.queue
         # channel.queue_bind(exchange='test', queue=queue_name, routing_key="fizz")
         
-        channel.basic_consume(callback, queue="fizz", no_ack=False)
+        channel.basic_qos(prefetch_count=3) # 
+        channel.basic_consume(callback, queue="fizz", no_ack=True)
 
         print(" [*] Waiting for messages. To exit press Ctrl+C")
 

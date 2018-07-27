@@ -23,7 +23,7 @@ if __name__ == '__main__':
                         body="{} - {}".format(msg, i),
                         properties=pika.BasicProperties(
                             delivery_mode=1,
-                            expiration='1000'
+                            expiration='1'
                         )
                     )
             print(f" [x] Test message [{msg}] #{i} has been sent")

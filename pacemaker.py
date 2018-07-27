@@ -79,7 +79,9 @@ if __name__ == '__main__':
     
     # preparing dispatcher:
     # inserting to dataframe number of cycles for pair reload needed to be run during single job processing
-    db.df_exchanges['cycles'] = np.floor(db.df_exchanges.ratelimit.max() / db.df_exchanges.ratelimit)
+    db.df_exchanges.ratelimit.fillna(db.df_exchanges.ratelimit.max())
+    db.df_exchanges['cycles'] = np.minimum(np.ceil(db.df_exchanges.ratelimit.max() / db.df_exchanges.ratelimit), int(cfg.job_max_pairs)) ## -- 2 pairs in one job max 
+
     # dict of cycles
     cycles = db.df_exchanges.set_index('id')[['cycles']].to_dict()['cycles']
     ratelimits = db.df_exchanges.set_index('id')[['ratelimit']].to_dict()['ratelimit']
@@ -126,7 +128,7 @@ if __name__ == '__main__':
                 common_delay = 0
                 #print("==========\n JOB\n==========")
                 for ex in db.df_exchanges.id.values:
-                    cycle = 1 #int(cycles[ex]) # --<<<======
+                    cycle = int(cycles[ex]) # --<<<======
                     ratelimit = ratelimits[ex]
                     job["job"][ex] = {"pairs": [], "ratelimit": ratelimit }
                     job["job"][ex]["pairs"] = list(pairs[ex])[:cycle]
@@ -140,7 +142,7 @@ if __name__ == '__main__':
                                     routing_key=worker, 
                                     body=json.dumps(job), # <<== assigning job to worker
                                     properties=pika.BasicProperties(
-                                    delivery_mode=1,  # 1 - fire and forget, 2 - persistent
+                                    delivery_mode=2,  # 1 - fire and forget, 2 - persistent
                                     expiration='{}'.format(int(common_delay))
                                 )
                             )

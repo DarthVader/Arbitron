@@ -34,6 +34,8 @@ class Settings():
         self.exchanges_table = self.config['logic']['exchanges']
         self.log_table = self.config['logic']['log']
         self.ttl_factor = self.config['logic']['ttl_factor']
+        self.log_file = self.config['logic']['log_local']
+        self.job_max_pairs = self.config['logic']['job_max_pairs']
 
 if __name__ == '__main__':
     print("This file is not intened for direct execution")

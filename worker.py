@@ -2,7 +2,7 @@
 
 # worker
 # collects historic/orderbook data from exchanges using ccxt library
-__version__ = '1.1.5'
+__version__ = '1.1.7'
 
 import pika
 import os, sys, argparse, time, socket, ipgetter
@@ -67,7 +67,7 @@ def callback(ch, method, properties, body):
         pacemaker_time      = body['timestamp']
 
         # Fetch history, orderbook START
-        markets.process_job(job, db) # <== pass job to Markets class which fetches history and orderbook then saves them to database
+        markets.process_job(body, db) # <== pass job to Markets class which fetches history and orderbook then saves them to database
         # Fetch history, orderbook END
 
         # if you see "tuple index out of range" - it means that something is wrong with parameters, quotes or commas in the following cql
@@ -78,16 +78,16 @@ def callback(ch, method, properties, body):
 
         # insert to log
         # message = "{}".format(host_name)
-        message = ""
+        log_message = ""
         for ex in job.keys():
-            message += f"{ex}: ["
+            log_message += f"{ex}: ["
             for pair in job[ex]['pairs']:
-                message += f"{pair},"
-            message += "]\n"
+                log_message += f"{pair},"
+            log_message += "]\n"
 
 
         cql = f"INSERT INTO {cfg.log_table} (id, ip, job, pacemaker, worker) VALUES(now(), \
-            '{ip}', '{message}', '{pacemaker_version}', '{__version__}')"
+            '{ip}', '{log_message}', '{pacemaker_version}', '{__version__}')"
         
         batch.add(cql)
         
@@ -136,14 +136,16 @@ if __name__ == '__main__':
 
     ##--------------- Database ------------------
     db = Database()
-    db.get_exchanges()    
-    my_exchanges = db.exchanges_list
+    #db.get_exchanges()
+    #my_exchanges = db.exchanges_list
+    #db.get_last_access()
+
     print(Fore.GREEN+Style.BRIGHT+f"{cfg.cassandra_nodes}"+Style.RESET_ALL)
 
     ##------------------- CCXT ---------------------
     print("Connecting to exchanges...".format(), end="\n", flush=False)
     markets = Markets(db)
-    markets.load_exchanges(exchanges_list=my_exchanges)
+    markets.load_exchanges(exchanges_list=db.exchanges_list)
     print(Fore.GREEN+Style.BRIGHT+"READY."+Style.RESET_ALL)
 
     
