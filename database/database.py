@@ -1,9 +1,9 @@
 #!/usr/bin/python3.6
 
 # Arbitron project database driver
-__version__ = '1.0.4'
+__version__ = '1.0.5'
 
-from cassandra.cluster import Cluster, BatchStatement, ConsistencyLevel, DCAwareRoundRobinPolicy
+from cassandra.cluster import Cluster, BatchStatement, SimpleStatement, ConsistencyLevel, DCAwareRoundRobinPolicy
 import sys, os, hashlib
 import asyncio
 import time
@@ -29,15 +29,20 @@ class Timer:
 class Database():
     
     def _pandas_factory(self, colnames, rows):
+        # ! Method to convert output from Cassandra to Pandas
         return pd.DataFrame(rows, columns=colnames)
 
 
-    def __init__(self):
+    def __init__(self, config):
+        """
+        Initialization of Arbitron Database instance
+            :param config: Config instance. Warning: this is changing here via load_rabbit_settings method!
+        """   
         init(convert=True)  # colorama init 
         self.exchanges = {} # hierarchical dict which will contain exchanges and corresponding pairs
         self.pairs = {}     # hierarchical dict which will contain pairs and corresponding exchanges
-        self.config = Settings()    # config instance from INI file
-        self._cache = {}            #  local cache for storing last access times to exchanges and pairs
+        self.config = config    # config instance from INI file
+        self._cache = {}        #  local cache for storing last access times to exchanges and pairs
 
         logging.basicConfig(filename=self.config.log_file, level=logging.INFO, format=u'%(filename)s:%(lineno)d %(levelname)-8s [%(asctime)s]  %(message)s')
 
@@ -50,6 +55,8 @@ class Database():
             self.session = cluster.connect(keyspace=self.config.settings_keyspace)
             self.session.row_factory = self._pandas_factory
             self.session.default_fetch_size = self.config.default_fetch_size
+            
+            # creating main history table if not exists (this table is the MUST for this project)
             cql = f'''CREATE TABLE IF NOT EXISTS 
                 {self.config.data_keyspace}.{self.config.history_table} ( 
                 exchange text,  
@@ -63,29 +70,52 @@ class Database():
                 PRIMARY KEY (( exchange, pair ), ts, id) 
             ) WITH CLUSTERING ORDER BY ( ts DESC, id ASC )'''
             _ = self.session.execute(cql, timeout=10)
-            self.get_exchanges()    
+            self.get_exchanges()
+            self.get_pairs()
+            self.get_tokens()
             self.get_last_access()
-            #my_exchanges = db.exchanges_list            
+            self.load_rabbit_settings(self.config)
+            
             print("OK")
 
         except Exception as e:
             print(Fore.RED+Style.BRIGHT+"{} {Style.RESET_ALL}".format(e, Fore=Fore, Style=Style))
 
 
-    def MD5(self, input):
+    def MD5(self, input: str):
+        # unique id generation based on MD5 algorithm
         m = hashlib.md5()
         m.update(input.encode('utf-8'))
         return m.hexdigest()
 
 
-    def SHA1(self, input):
+    def SHA1(self, input: str):
+        """ unique id generation based on SHA1 algorithm """
         m = hashlib.sha1()
         m.update(input.encode('utf-8'))
         return m.hexdigest()
+        
+
+    def load_rabbit_settings(self):
+        """
+        Loads RabbitMQ settings from Cassandra database and saves them in config
+        changes self.config instance.
+        """
+        nodes = self.get_setting_value_by_name(self.config['pacemaker']['nodes'])
+        rabbit_port = self.get_setting_value_by_name(self.config['pacemaker']['port']) #15672 
+        rabbit_user = self.get_setting_value_by_name(self.config['pacemaker']['user'])
+        rabbit_pass = self.get_setting_value_by_name(self.config['pacemaker']['password'])
+        queue_name  = self.get_setting_value_by_name(self.config['pacemaker']['queue_name'])
+        
+
+    def get_setting_value_by_name(self, name: str):
+        cql = f"select * from {self.config.settings_table} where name={name} allow filtering;"
+        res = self.session.execute(cql, timeout=10)
+        return res.current_rows[0]
 
 
     def get_exchanges(self):
-        # Receiving exchanges data
+        """ Receiving exchanges data """
         try:
             cql = f"select * from {self.config.exchanges_table} where enabled=true allow filtering;"
             res = self.session.execute(cql, timeout=10)
@@ -96,7 +126,7 @@ class Database():
             print(Fore.RED+Style.BRIGHT+"Error in {__file__}.get_exchanges(). {} {Style.RESET_ALL}".format(e.args[0], Fore=Fore, Style=Style))
 
     def get_tokens(self):
-        # tokens
+        """ fetches tokens from database"""
         try:
             cql = f"select * from {self.config.tokens_table} where enabled=true allow filtering;"
             res = self.session.execute(cql, timeout=10)
@@ -110,7 +140,7 @@ class Database():
 
 
     def get_pairs(self):
-        # tokens
+        """ fetches pairs from database """
         try:
             cql = f"select * from {self.config.pairs_table} where enabled=true allow filtering"
             res = self.session.execute(cql, timeout=10)
@@ -122,7 +152,19 @@ class Database():
             print(Fore.RED+Style.BRIGHT+"{} {Style.RESET_ALL}".format(e.args[0], Fore=Fore, Style=Style))        
 
 
-    def batch_insert(self, cql_list):
+    def execute(self, cql):
+        """ executes cql, defined in string parameter cql """
+        try:
+            statement = SimpleStatement(cql, consistency_level=ConsistencyLevel.LOCAL_QUORUM)
+            self.session.execute(statement, timeout=30)
+
+        except Exception as e:
+            print(Fore.RED+Style.BRIGHT+"Error in {__file__}.batch_insert(). {} {Style.RESET_ALL}".format(e.args[0], Fore=Fore, Style=Style))
+
+
+    
+    def batch_execute(self, cql_list):
+        """ executes batch of cqls, defined in list parameter cql_list """
         try:
             batch = BatchStatement(consistency_level=ConsistencyLevel.LOCAL_QUORUM)
             for cql in cql_list:
@@ -135,39 +177,17 @@ class Database():
 
     def __del__(self):
         try:
-            #self.session.close()
             pass
         except Exception as e:
             print(Fore.RED+Style.BRIGHT+"{} {Style.RESET_ALL}".format(e.args[0], Fore=Fore, Style=Style))
-        
-
-    # async def _get_last_access(self, exchange, pair):
-    #     await asyncio.sleep(0)
-    #     cql = f"""SELECT ts FROM {self.config.data_keyspace}.{self.config.history_table} 
-    #                         WHERE exchange='{exchange}' and pair='{pair}' LIMIT 1"""
-    #     res = self.session.execute(cql, timeout=5)
-    #     df = res._current_rows
-    #     if len(df)>0:
-    #         self._cache[exchange][pair] = int(df.iloc[0].values[0].astype(np.uint64)/1e6)
-    #     else:
-    #         self._cache[exchange][pair] = None
-    #     logging.info(f"{exchange}, {pair} fetched {self._cache[exchange][pair]}")
 
 
-    #def get_last_access(self, exchange, pair):
     def get_last_access(self):
+        """ get last access time for each exchanges-pair  """
         try:
             timer = Timer()
             logging.info("Starting async get_last_access")
-            self.get_pairs()
-            # loop = asyncio.get_event_loop()
-            # tasks = []
-            # for exchange in self.exchanges_list:
-            #     self._cache[exchange] = {}
-            #     for pair in self.exchanges[exchange]:
-            #         tasks.append(self._get_last_access(exchange, pair))
-
-            # loop.run_until_complete(asyncio.wait(tasks))
+            #self.get_pairs()
 
             # Using cool C* PER PARTITION trick for fetching last access times in single pass
             cql = "select * from arbitron.history per partition limit 1"

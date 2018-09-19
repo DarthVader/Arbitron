@@ -1,8 +1,8 @@
 import os, glob, hashlib, sys
 import argparse
 import subprocess
-#from datetime import datetime
-#from cassandra.cluster import Cluster
+from datetime import datetime
+from cassandra.cluster import Cluster
 
 
 timehash_depth = 10 # hashing power to eliminate duplicates using concurrent writes
@@ -49,23 +49,26 @@ def SHA1(input):
 
 if __name__ == '__main__':
     print("Loading CSV file(s) to Cassandra database")
-    ap = argparse.ArgumentParser()
-    ap.add_argument("-f", "--file", required=True, help="file name")
-    args = vars(ap.parse_args())
+    #ap = argparse.ArgumentParser()
+    #ap.add_argument("-f", "--file", required=True, help="file name")
+    #args = vars(ap.parse_args())
 
-    # print("Connecting to Cassandra instance...", end="", flush=False)
-    # cluster = Cluster(contact_points=['127.0.0.1'], port=9042) #, auth_provider=auth_provider)
-    # session = cluster.connect(keyspace='alpha')
-    # print("Done.")
+    print("Connecting to Cassandra instance...", end="", flush=False)
+    cluster = Cluster(contact_points=['10.7.0.19', '10.7.0.10', '10.7.0.21'], port=9042) #, auth_provider=auth_provider)
+    session = cluster.connect(keyspace='arbitron')
+    print("Done.")
     
-    file_in = os.getcwd() + "/" + args["file"].strip()
+    #file_in = os.getcwd() + "/" + args["file"].strip()
     # file_out = "temp_" + os.path.splitext(os.path.basename(file_in))[0] + ".csv"
     file_out = os.path.abspath(os.path.join(os.getcwd(), os.pardir)) + "/temp.csv"
+    os.chdir("D:\Git\Arbitron\data\history")
+    files = [file for file in glob.glob('*.csv')]
 
-    #for file in files:
+    #for file_in in files:
+    file_in = "Binance.BTC-USDT.csv"
     print("{} -> {}".format(os.path.basename(file_in), os.path.basename(file_out)))
     with open(file_out, 'w') as fo:
-        fo.write('id,exchange,symbol,tdate,price,amount,side\n')
+        # fo.write('id,exchange,symbol,tdate,price,amount,side\n')
         with open(file_in, 'r') as fi:            
             last_hash = "" # here we init last_hash each time when loading file from CSV
             
@@ -86,7 +89,7 @@ if __name__ == '__main__':
                     key = MD5(last_hash + md5)
                 last_hash = key # remember current hash
 
-                fo.write("{},{},{},{},{},{},{}\n".format(key, exchange, symbol, ts, price, amount, side))
+                fo.write("{},{},{},{},{},{},{}\n".format(key, exchange.lower(), symbol, ts, price, amount, side))
 
                 # cql = "INSERT INTO beta.history (id, exchange, symbol, tdate, price, amount, side) " \
                 #       "VALUES('{}', '{}', '{}', {}, {}, {}, '{}') IF NOT EXISTS".format(key, exchange, symbol, ts, price, amount, side)     
@@ -94,10 +97,10 @@ if __name__ == '__main__':
                 # session.execute(cql, timeout=5)
 
     print("Running script in cqlsh:")
-    cql = "COPY beta.history(id,exchange,symbol,tdate,price,amount,side) FROM '{}' WITH DELIMITER='{}' AND HEADER=TRUE".format(file_out, sep)
+    cql = "COPY arbitron.history(id,exchange,pair,ts,price,amount,side) FROM '{}' WITH DELIMITER='{}' AND HEADER=TRUE".format(file_out, sep)
     cql = 'cqlsh -e "{}"'.format(cql)
-    print("\t"+cql)
-    
+    #print("\t"+cql)
+
     process = subprocess.Popen(cql, shell=True)
     exitCode = process.wait()
     

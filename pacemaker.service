@@ -1,0 +1,9 @@
+[Unit]
+Description=Arbitron pacemaker service
+
+[Service]
+WorkingDirectory=/home/mike/Arbitron
+ExecStart=/home/mike/Arbitron/bin/python3 /home/mike/Arbitron/pacemaker.py
+
+[Install]
+WantedBy=multi-user.target

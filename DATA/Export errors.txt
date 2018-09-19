@@ -1,0 +1,4 @@
+[Flat File Source [36]] Error: An error occurred while processing file "D:\Git\Arbitron\DATA\history\Binance.ADA-USDT.csv" on data row 1059903.
+[Flat File Source [36]] Error: An error occurred while processing file "D:\Git\Arbitron\DATA\history\Binance.ETH-BTC.csv" on data row 5467955.
+[Flat File Source [36]] Error: An error occurred while processing file "D:\Git\Arbitron\DATA\history\Binance.ICX-ETH.csv" on data row 188249.
+

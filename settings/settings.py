@@ -18,8 +18,8 @@ class Settings():
         self.default_fetch_size = int(self.config['database']['default_fetch_size'])
 
         # pacemaker settings
-        self.rabbit_nodes= self.config['pacemaker']['nodes'].replace(" ","").split(",")
-        self.rabbit_port = int(self.config['pacemaker']['port']) #15672 
+        self.rabbit_nodes= self.config['pacemaker']['nodes'] #.replace(" ","").split(",")
+        self.rabbit_port = self.config['pacemaker']['port'] # 15672 
         self.rabbit_user = self.config['pacemaker']['user']
         self.rabbit_pass = self.config['pacemaker']['password']
         self.queue_name  = self.config['pacemaker']['queue_name']

@@ -1,4 +1,4 @@
-#!/usr/bin/python3.6
+#!/usr/bin/env python3
 
 # pacemaker
 # dispatching server
@@ -49,6 +49,13 @@ if __name__ == '__main__':
     init(convert=True) # colorama init    
     print(f"Pacemaker {__version__}")
     print(f"pika version: {pika.__version__}")
+
+    ##--------------- Database ------------------
+    db = Database(cfg)
+    my_exchanges = db.exchanges_list
+    my_tokens = db.tokens_list
+    print(Fore.GREEN+Style.BRIGHT+f"{cfg.cassandra_nodes}"+Style.RESET_ALL)
+
     ##--------------- Message broker ------------------
     print("Connecting to pacemaker server...", end='', flush=False)
     try:
@@ -61,15 +68,6 @@ if __name__ == '__main__':
         print(Fore.RED+Style.BRIGHT+f"FAILED!{Style.RESET_ALL}\nCannot connect to pacemaker")
         sys.exit()
     print(Fore.GREEN+Style.BRIGHT+f"{cfg.rabbit_nodes[0]}"+Style.RESET_ALL)
-
-    ##--------------- Database ------------------
-    db = Database()
-    db.get_exchanges()
-    db.get_tokens()
-    db.get_pairs()
-    my_exchanges = db.exchanges_list
-    my_tokens = db.tokens_list
-    print(Fore.GREEN+Style.BRIGHT+f"{cfg.cassandra_nodes}"+Style.RESET_ALL)
 
     ##------------------- CCXT ---------------------
     print("Connecting to exchanges...".format(), end="\n", flush=False)
@@ -85,6 +83,7 @@ if __name__ == '__main__':
     # dict of cycles
     cycles = db.df_exchanges.set_index('id')[['cycles']].to_dict()['cycles']
     ratelimits = db.df_exchanges.set_index('id')[['ratelimit']].to_dict()['ratelimit']
+
     # pairs structure
     pairs = pd.pivot_table(db.df_pairs[['exchange', 'pair']], index=['exchange'], aggfunc=deque).to_dict()['pair']
 
@@ -163,5 +162,3 @@ if __name__ == '__main__':
 
         except Exception as e:
             print(f"Error in {__file__}.main(): {e}")
-
-        

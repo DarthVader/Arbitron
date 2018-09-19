@@ -23,48 +23,21 @@ select * from [mem].[orderbook]
 -- see: https://docs.microsoft.com/en-us/sql/relational-databases/in-memory-oltp/faster-temp-table-and-table-variable-by-using-memory-optimization?view=sql-server-2017
 
 go
-CREATE OR ALTER procedure dbo.save_orderbook_json (@json as varchar(max))
-
- as begin
-
-	declare @exchange varchar(50)=NULL, @pair varchar(10)=NULL;
-	--declare @timestamp numeric(38, 0);
-	--declare @temp_orderbook as dbo.orderbook_type;
-
-	begin transaction;
-
-
-	select @exchange=exchange, @pair=pair
-	from  OPENJSON(@json) 
-	with (
-		exchange varchar(50) '$.exchange',
-		pair varchar(10) '$.pair' 
-	) e
-	
-	-- select @exchange exchange, @pair pair
-
-	IF @exchange IS NULL
-	BEGIN
-		raiserror('Exchange is NULL!', 16, 1)
-		return
-	END
-	IF @pair IS NULL
-	BEGIN
-		raiserror('Pair is NULL!', 16, 1)
-		return
-	END
-	
-	-- INSERT to dbo.orderbook using in-memory table type dbo.histories_type
-	-- see https://docs.microsoft.com/en-us/sql/relational-databases/in-memory-oltp/faster-temp-table-and-table-variable-by-using-memory-optimization?view=sql-server-2017
-	
-	--print 'Insert to temp table [@temp_orderbook]'
-	--insert @temp_orderbook([insert_date],[timestamp],[ts],[exchange],[pair],[price],[amount],[type])
-
+CREATE OR ALTER procedure mem.save_orderbook_json (@json as varchar(max))
+with native_compilation, schemabinding   
+as 
+begin atomic with (TRANSACTION ISOLATION LEVEL = SNAPSHOT, LANGUAGE = N'us_english')  
 	-- INSERT to mem.orderbook
-	print 'Insert to target table mem.orderbook'
-	;with 
-	bids as (
-		select exchange, pair, ts, dt, price, amount  --GETUTCDATE() insert_date, [timestamp], ts, @exchange, @pair, price, amount, [type]
+	-- BIDS
+	INSERT INTO [mem].[orderbook]
+			   ([exchange]
+			   ,[pair]
+			   ,[ts]
+			   ,[dt]
+			   ,[side]
+			   ,[price]
+			   ,[amount])
+	select exchange, pair, ts, dt, 'bid' side, price, amount  --GETUTCDATE() insert_date, [timestamp], ts, @exchange, @pair, price, amount, [type]
 		from  
 		OPENJSON(@json,'$')
 		with (
@@ -78,9 +51,17 @@ CREATE OR ALTER procedure dbo.save_orderbook_json (@json as varchar(max))
 			amount float '$[1]'
 		) bids
 		cross apply (SELECT DATEADD(second, ts, CAST('1970-01-01 00:00:00' AS datetime)) dt) d
-	),
-	asks as (
-		select exchange, pair, ts, dt , price, amount
+	--where not exists (select 1 from mem.orderbook om where o.exchange=om.exchange and o.pair=om.pair and o.ts=om.ts and o.side='bid' and o.price=om.price and o.amount=om.amount)
+	-- ASKS
+	INSERT INTO [mem].[orderbook]
+			   ([exchange]
+			   ,[pair]
+			   ,[ts]
+			   ,[dt]
+			   ,[side]
+			   ,[price]
+			   ,[amount])
+	select exchange, pair, ts, dt, 'ask' side, price, amount  --GETUTCDATE() insert_date, [timestamp], ts, @exchange, @pair, price, amount, [type]
 		from  
 		OPENJSON(@json,'$')
 		with (
@@ -92,33 +73,9 @@ CREATE OR ALTER procedure dbo.save_orderbook_json (@json as varchar(max))
 		with (
 			price float '$[0]',
 			amount float '$[1]'
-		) asks
+		) bids
 		cross apply (SELECT DATEADD(second, ts, CAST('1970-01-01 00:00:00' AS datetime)) dt) d
-	),
-	orderbook as (
-		select ts, dt, exchange, pair, 'bid' side, cast(price as decimal(38,12)) price, cast(amount as decimal(38,12)) amount from bids
-		union all
-		select ts, dt, exchange, pair, 'ask' side, cast(price as decimal(38,12)) price, cast(amount as decimal(38,12)) amount from asks
-	)
-	
-	INSERT INTO dbo.[orderbook]
-			   ([exchange]
-			   ,[pair]
-			   ,[ts]
-			   ,[dt]
-			   ,[side]
-			   ,[price]
-			   ,[amount])
-			   
-	select exchange, pair, ts, dt, side, price, amount from orderbook o
-	where not exists (select 1 from mem.orderbook om with(snapshot) where 
-	o.exchange=om.exchange and o.pair=om.pair and o.ts=om.ts and o.side=om.side and o.price=om.price and o.amount=om.amount)
-
-	commit;
-	
-	declare @rc int
-	set @rc = @@ROWCOUNT
-	print 'Inserted ' +  cast(@rc as varchar(10)) + ' rows(s)'
+	--where not exists (select 1 from mem.orderbook om where o.exchange=om.exchange and o.pair=om.pair and o.ts=om.ts and o.side='ask' and o.price=om.price and o.amount=om.amount)
 
 	return @@ROWCOUNT
 end

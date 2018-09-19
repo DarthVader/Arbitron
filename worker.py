@@ -1,4 +1,4 @@
-#!/usr/bin/python3.6
+#!/usr/bin/env python3
 
 # worker
 # collects historic/orderbook data from exchanges using ccxt library
@@ -23,7 +23,7 @@ from markets.markets import Markets
 
 print(f"Worker: {__version__}")
 cfg = Settings()      # read settings from INI file (singleton)
-#db = Database()       # connecting to database (singleton)
+#db = Database(cfg)       # connecting to database (singleton)
 #markets = Markets(db) # Markets library instance (singleton)
 
 common_delay = 3000   # stub !!!
@@ -120,6 +120,13 @@ if __name__ == '__main__':
     host_name = socket.gethostname()
     print(Fore.GREEN+Style.BRIGHT+f"Worker IP={ip}, host name={host_name})"+Style.RESET_ALL)
 
+    ##--------------- Database ------------------
+    db = Database(cfg)
+    #db.get_exchanges()
+    #my_exchanges = db.exchanges_list
+
+    print(Fore.GREEN+Style.BRIGHT+f"{cfg.cassandra_nodes}"+Style.RESET_ALL)
+
     ##--------------- Message broker ------------------
     print("Connecting to pacemaker...", end='', flush=False)
     try:
@@ -134,13 +141,6 @@ if __name__ == '__main__':
 
     print(Fore.GREEN+Style.BRIGHT+f"{cfg.rabbit_nodes[0]}"+Style.RESET_ALL)
 
-    ##--------------- Database ------------------
-    db = Database()
-    #db.get_exchanges()
-    #my_exchanges = db.exchanges_list
-    #db.get_last_access()
-
-    print(Fore.GREEN+Style.BRIGHT+f"{cfg.cassandra_nodes}"+Style.RESET_ALL)
 
     ##------------------- CCXT ---------------------
     print("Connecting to exchanges...".format(), end="\n", flush=False)
