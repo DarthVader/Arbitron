@@ -1,6 +1,7 @@
 -- insert to mem.orderbook from backups
 USE Arbitron
 GO
+
 ALTER DATABASE Arbitron
 SET SINGLE_USER
 WITH ROLLBACK IMMEDIATE;
@@ -19,8 +20,6 @@ go
 
 drop table if exists mem.order_book 
 go
-
-
 
 
 CREATE TABLE [mem].[order_book]
@@ -68,6 +67,7 @@ from backups.order_book b
 
 SET IDENTITY_INSERT [mem].[order_book] OFF
 GO
+
 
 GO
 CREATE OR ALTER procedure [dbo].[save_order_book_json] (@json as varchar(max))
@@ -148,7 +148,7 @@ end
 GO
 
 
-grant exec on mem.save_order_book_json to [Workers]
+--grant exec on mem.save_order_book_json to [Workers]
 grant exec on dbo.save_order_book_json to [Workers]
 GO
 
@@ -158,14 +158,8 @@ GO
 ALTER DATABASE Arbitron
 SET MULTI_USER;
 GO
+USE [master]
+GO
+ALTER DATABASE [Arbitron] SET  READ_WRITE WITH NO_WAIT
+GO
 
-/* 
-select b.id, p.id_ex_pair,
-	--p.exchange, p.pair, 
-	b.dt, b.is_bid, b.price, b.amount
-from backups.order_book b
-inner join dbo.exchanges e on e.eid=b.exchange_id
-inner join mem.tokens t1 on t1.sid=b.id_fsym
-inner join mem.tokens t2 on t2.sid=b.id_tsym
-inner join mem.exchanges_pairs p on p.exchange=e.id and p.pair=t1.symbol + '/' + t2.symbol
-*/

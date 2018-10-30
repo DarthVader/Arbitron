@@ -8,7 +8,7 @@ select --top 100 percent
 	,bid_ask
     ,cast(round([price], 10) as real) price
     ,cast(round([amount], 10) as real) amount
-	,cast(round(price * amount, 10) as float) volume
+	,cast(round(price * amount, 10) as real) volume
 from mem.order_book o
 inner join mem.exchanges_pairs ep on o.id_ex_pair=ep.id_ex_pair
 cross apply (select iif(o.is_bid=1,'bid','ask') bid_ask) side

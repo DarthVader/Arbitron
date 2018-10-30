@@ -1,8 +1,19 @@
--- dbo.v_history 1.0
 USE [Arbitron]
 GO
-CREATE OR ALTER VIEW dbo.v_history AS
-SELECT DATEADD(mi, DATEDIFF(mi, GETUTCDATE(), GETDATE()), dt) dt
+
+/****** Object:  View [dbo].[v_history]    Script Date: 10.10.2018 19:19:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+
+ALTER     VIEW [dbo].[v_history] AS
+-- v_history v.1.2
+SELECT rownum
+	  ,DATEADD(mi, DATEDIFF(mi, GETUTCDATE(), GETDATE()), dt) dt
       ,[id_ex_pair]
 	  ,exchange
 	  ,pair
@@ -15,8 +26,11 @@ SELECT DATEADD(mi, DATEDIFF(mi, GETUTCDATE(), GETDATE()), dt) dt
 	  ,DATEADD(mi, DATEDIFF(mi, GETUTCDATE(), GETDATE()), [insert_date]) [insert_date]
   FROM [mem].[history] with (snapshot)
   cross apply dbo.tvf_get_exchange_pair_by_id_ex_pair(id_ex_pair) p
+  
 UNION ALL
-SELECT DATEADD(mi, DATEDIFF(mi, GETUTCDATE(), GETDATE()), dt) dt
+SELECT 
+	   null
+	  ,DATEADD(mi, DATEDIFF(mi, GETUTCDATE(), GETDATE()), dt) dt
       ,[id_ex_pair]
 	  ,exchange
 	  ,pair
@@ -29,14 +43,9 @@ SELECT DATEADD(mi, DATEDIFF(mi, GETUTCDATE(), GETDATE()), dt) dt
 	  ,DATEADD(mi, DATEDIFF(mi, GETUTCDATE(), GETDATE()), [insert_date]) [insert_date]
   FROM [dbo].[history]
   cross apply dbo.tvf_get_exchange_pair_by_id_ex_pair(id_ex_pair) p
+  --where dt>DATEADD(MONTH, -1, GETUTCDATE())
 GO
 
-SET STATISTICS IO ON
-SET STATISTICS TIME ON
-
-select top 100000 id, dt, exchange, pair, price, amount, side from v_history where [location]='memory' and id_ex_pair=19 order by dt desc
-select id, dt, exchange, pair, price, amount, side from v_history where [location]='memory' and id_ex_pair=19 and dt >= dateadd(SECOND, -7200, getdate()) order by dt
-
-SET STATISTICS IO OFF
-SET STATISTICS TIME OFF
-
+-- select DATEDIFF(mi, GETUTCDATE(), GETDATE())
+ --
+ select * from v_history where exchange='binance' and pair='ETH/USDT' and dt>'23.09.2018 0:00:00'
